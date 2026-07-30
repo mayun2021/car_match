@@ -17,9 +17,9 @@
 | GPIO_MOTOR_BIN1 | 输出 | PA22 | 低 |
 | GPIO_MOTOR_BIN2 | 输出 | PA14 | 低 |
 | GPIO_MOTOR_STBY | 输出 | PA25 | 高 |
-| GPIO_KEY_MODE | 输入 | PA26 | 内部上拉 |
-| GPIO_KEY_START | 输入 | PA27 | 内部上拉 |
-| GPIO_KEY_CALIB | 输入 | PA1 | 内部上拉 |
+| GPIO_KEY_MODE | 输入 | PA27 | 内部上拉 |
+| GPIO_KEY_START | 输入 | PA17 | 内部上拉 |
+| GPIO_KEY_CALIB | 输入 | PA30 | 内部上拉 |
 
 ## 2. PWM
 

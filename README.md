@@ -35,8 +35,9 @@
 | MPU6050 | SDA/SCL | PA16/PA15 |
 | MG996R | PWM | PA7，若硬件不同只改配置 |
 | K230 | UART RX/TX | PA10/PA11，若硬件不同只改配置 |
+| 按键 MODE/START/CALIB | SW2/SW3/SW4 | PA27/PA17/PA30 |
 
-注意：你的按键图里 `PA25` 与电机驱动 `STBY` 冲突。本工程默认把 `PA25` 留给 TB6612，按键使用 `PA26/PA27/PA1`。如果硬件已经焊死，请优先修改硬件或在 `include/robot_config.h` 里重映射按键。
+注意：你的按键图里 `PA25` 与电机驱动 `STBY` 冲突。本工程默认把 `PA25` 留给 TB6612，按键使用 `PA27/PA17/PA30`。如果硬件已经焊死，请优先修改硬件或在 `include/robot_config.h` 里重映射按键。
 
 ## 模式操作
 

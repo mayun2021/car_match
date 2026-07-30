@@ -124,13 +124,13 @@ bool hal_gpio_read(hal_pin_t pin)
         /* TODO: PB5 */
         break;
     case HAL_PIN_KEY_MODE:
-        /* TODO: PA26 */
-        break;
-    case HAL_PIN_KEY_START:
         /* TODO: PA27 */
         break;
+    case HAL_PIN_KEY_START:
+        /* TODO: PA17 */
+        break;
     case HAL_PIN_KEY_CALIB:
-        /* TODO: PA1 */
+        /* TODO: PA30 */
         break;
     default:
         break;

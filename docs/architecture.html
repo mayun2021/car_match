@@ -587,11 +587,11 @@
             <tr><td>红外循迹 YB-MVX01</td><td class="mono">OUT1/OUT2/OUT3/OUT4</td><td class="mono">PB2/PB3/PB4/PB5</td><td>低电平 = 检测到黑线</td></tr>
             <tr><td>TB6612 A 路</td><td class="mono">PWMA/AIN1/AIN2</td><td class="mono">PA8/PA24/PA28</td><td>驱动左轮 MG310</td></tr>
             <tr><td>TB6612 B 路</td><td class="mono">PWMB/BIN1/BIN2</td><td class="mono">PA9/PA22/PA14</td><td>驱动右轮 MG310</td></tr>
-            <tr><td>TB6612</td><td class="mono">STBY</td><td class="mono">PA25</td><td>高电平使能；与原按键图 PA25 冲突，已改用按键 PA26/27/1</td></tr>
+            <tr><td>TB6612</td><td class="mono">STBY</td><td class="mono">PA25</td><td>高电平使能；与原按键图 PA25 冲突，已改用按键 PA27/17/30</td></tr>
             <tr><td>MPU6050</td><td class="mono">SDA/SCL</td><td class="mono">PA16/PA15</td><td>I2C，地址 0x68（AD0 接地）</td></tr>
             <tr><td>MG996R</td><td class="mono">PWM</td><td class="mono">PA7</td><td>50Hz，脉宽约 700–2300us</td></tr>
             <tr><td>K230</td><td class="mono">UART RX/TX</td><td class="mono">PA10/PA11</td><td>115200 8N1，K230 TX → MSPM0 RX</td></tr>
-            <tr><td>按键</td><td class="mono">MODE/START/CALIB</td><td class="mono">PA26/PA27/PA1</td><td>避开 PA25 与 STBY 冲突，默认低电平按下</td></tr>
+            <tr><td>按键</td><td class="mono">MODE/START/CALIB</td><td class="mono">PA27/PA17/PA30</td><td>SW2/SW3/SW4，接地触发，默认低电平按下</td></tr>
           </tbody>
         </table>
       </div>

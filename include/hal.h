@@ -34,9 +34,9 @@ typedef enum
     HAL_PIN_MOTOR_BIN2,       /* PA14 */
     HAL_PIN_MOTOR_STBY,       /* PA25 */
 
-    HAL_PIN_KEY_MODE,         /* PA26 */
-    HAL_PIN_KEY_START,        /* PA27 */
-    HAL_PIN_KEY_CALIB,        /* PA1，避开 PA25 冲突 */
+    HAL_PIN_KEY_MODE,         /* PA27 */
+    HAL_PIN_KEY_START,        /* PA17 */
+    HAL_PIN_KEY_CALIB,        /* PA30 */
 
     HAL_PIN_COUNT
 } hal_pin_t;
