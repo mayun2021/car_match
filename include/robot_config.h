@@ -89,4 +89,11 @@
 #define ROBOT_MPU6050_ADDR             0x68u
 #define ROBOT_MPU_CALIB_SAMPLES        300u
 
+/*
+ * OLED 显示屏 I2C 地址。0.96 寸 SSD1306 模块多数为 0x3C，
+ * 少数为 0x3D，屏幕不亮时优先检查这个宏。与 MPU6050 共用
+ * PA15/PA16 这一条 I2C 总线，靠地址区分设备。
+ */
+#define ROBOT_OLED_I2C_ADDR            0x3Cu
+
 #endif

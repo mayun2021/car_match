@@ -40,6 +40,8 @@ typedef struct
     uint16_t servo_us;
     bool line_valid;
     bool vision_valid;
+    uint8_t line_mask;        /* 四路红外掩码，bit0=最左，bit3=最右 */
+    uint32_t run_elapsed_ms;  /* 本次任务已运行时间；完成/停止后定格 */
 } robot_telemetry_t;
 
 #endif

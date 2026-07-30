@@ -15,6 +15,7 @@ SIM_SRCS := \
 	src/drivers/line_sensor.c \
 	src/drivers/motor.c \
 	src/drivers/mpu6050.c \
+	src/drivers/oled.c \
 	src/drivers/servo.c \
 	src/platform/hal_stub.c
 

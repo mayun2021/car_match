@@ -15,7 +15,7 @@
 ├── include/                 # 公开头文件与统一配置
 ├── src/
 │   ├── app/                 # 模式状态机、PID 算法
-│   ├── drivers/             # 电机、巡线、舵机、MPU6050、K230 通信
+│   ├── drivers/             # 电机、巡线、舵机、MPU6050、K230 通信、OLED 显示
 │   ├── platform/            # MSPM0 板级适配层与桌面仿真桩
 │   └── main.c               # 程序入口
 ├── docs/                    # 接线表、调参流程、K230 协议
@@ -33,6 +33,7 @@
 | TB6612 B路 | PWMB/BIN1/BIN2 | PA9/PA22/PA14 |
 | TB6612 | STBY | PA25 |
 | MPU6050 | SDA/SCL | PA16/PA15 |
+| OLED (SSD1306 0.96寸) | SDA/SCL | PA16/PA15，与 MPU6050 共用 I2C 总线，地址 0x3C |
 | MG996R | PWM | PA7，若硬件不同只改配置 |
 | K230 | UART RX/TX | PA10/PA11，若硬件不同只改配置 |
 | 按键 MODE/START/CALIB | SW2/SW3/SW4 | PA27/PA17/PA30 |

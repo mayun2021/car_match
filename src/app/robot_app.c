@@ -152,6 +152,7 @@ static void start_task(uint32_t now_ms)
     s_ball_stage_start_ms = now_ms;
     s_ball_stage = BALL_STAGE_POSITIVE;
     s_tel.ball_target_mm = ROBOT_BALL_TARGET_POS_MM;
+    s_tel.run_elapsed_ms = 0u;
     reset_controllers();
     mpu6050_zero_yaw();
 }
@@ -430,9 +431,12 @@ void robot_app_tick(uint32_t now_ms)
     line = line_sensor_read();
     s_tel.line_error = line.error;
     s_tel.line_valid = line.valid;
+    s_tel.line_mask = line.mask;
 
     if (s_tel.state == ROBOT_STATE_RUNNING)
     {
+        s_tel.run_elapsed_ms = now_ms - s_task_start_ms;
+
         if (s_tel.mode == ROBOT_MODE_LINE)
         {
             run_line_control(&line, dt_s, now_ms);

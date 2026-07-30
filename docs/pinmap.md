@@ -65,3 +65,14 @@ MG996R 电流较大，不建议直接从主控板 5V 小电流接口供电。
 | 校准 | SW4 | PA30 |
 
 如果坚持使用 PA25 作为按键，必须把 TB6612 的 STBY 改接到其他空闲 GPIO，或者直接硬件上拉到高电平；否则电机驱动会被按键状态影响。
+
+## 7. OLED 显示屏
+
+| OLED | MSPM0 |
+|---|---|
+| SCL | PA15 |
+| SDA | PA16 |
+| VCC | 3.3V |
+| GND | GND |
+
+0.96 寸 SSD1306，128x64，I2C 接口（GND/VCC/SCL/SDA 4 线），与 MPU6050 共用同一条 I2C 总线（PA15/PA16），靠地址区分：MPU6050 固定 0x68，OLED 默认 0x3C（见 `ROBOT_OLED_I2C_ADDR`，屏幕不亮时优先尝试改成 0x3D）。驱动实现见 [oled.c](../src/drivers/oled.c)，显示排版见 [display.c](../src/drivers/display.c)。
