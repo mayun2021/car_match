@@ -161,6 +161,14 @@ static void start_task(uint32_t now_ms)
      * 视频中的原地旋转就是在 MASK=0 时启动后进入无限原地找线。
      * 循迹/组合模式必须先把探头对准黑线；滚球单项不受此限制。
      */
+    if (s_tel.state == ROBOT_STATE_ERROR)
+    {
+        /* MPU6050 离线时 yaw_deg 永远不会累加，巡线圈数判定永远不会
+         * 满足，车会一直跑下去。宁可拒绝启动也不要出现停不下来。 */
+        motor_stop();
+        return;
+    }
+
     if (s_tel.mode != ROBOT_MODE_BALL && !line_ready_for_start())
     {
         motor_stop();
@@ -223,8 +231,22 @@ static void handle_button_events(uint32_t now_ms)
     {
         motor_stop();
         servo_center();
-        (void)mpu6050_calibrate_gyro();
-        mpu6050_zero_yaw();
+
+        if (s_tel.state == ROBOT_STATE_ERROR)
+        {
+            /* 传感器之前离线：重新走一次完整初始化，方便现场排查接线后
+             * 不用断电重上电就能恢复。mpu6050_init() 成功时内部已经做过
+             * 校准和清零，不需要再调用 calibrate_gyro/zero_yaw。 */
+            if (mpu6050_init())
+            {
+                s_tel.state = ROBOT_STATE_IDLE;
+            }
+        }
+        else
+        {
+            (void)mpu6050_calibrate_gyro();
+            mpu6050_zero_yaw();
+        }
     }
 }
 
@@ -285,12 +307,15 @@ static void run_line_control(const line_sample_t *line, float dt_s, uint32_t now
     motor_set_raw(left, right);
 
     /*
-     * 跑完一圈纯靠 MPU6050 累计偏航角判定：起始角度为 0，转过
-     * ROBOT_LINE_FINISH_YAW_DEG（350°）即视为绕场一圈完成，直接停车，
-     * 不再依赖四探头全黑的停车线视觉标记。
+     * 跑完一圈判定：偏航角和计时兜底谁先满足就停车。
+     * - 偏航角：MPU6050 从起步时清零，转过 ROBOT_LINE_FINISH_YAW_DEG 即视为
+     *   绕场一圈完成。
+     * - 计时兜底：即使 MPU6050 离线/读数异常导致 yaw 不再累加，跑够实测的
+     *   ROBOT_LINE_LAP_TIME_MS 也强制停车，避免转一圈半都不停。
      */
     if (now_ms - s_task_start_ms > ROBOT_START_LINE_IGNORE_MS &&
-        absf_local(s_tel.yaw_deg) >= ROBOT_LINE_FINISH_YAW_DEG)
+        (absf_local(s_tel.yaw_deg) >= ROBOT_LINE_FINISH_YAW_DEG ||
+         now_ms - s_task_start_ms >= ROBOT_LINE_LAP_TIME_MS))
     {
         set_finished();
     }
@@ -416,7 +441,15 @@ void robot_app_init(void)
     line_sensor_init();
     servo_init();
     k230_protocol_init();
-    (void)mpu6050_init();
+    if (!mpu6050_init())
+    {
+        /*
+         * MPU6050 离线（接线/地址/供电问题）会导致 yaw_deg 永远停在 0，
+         * 巡线圈数判定失效但没有任何提示。这里显式进入 ERROR 状态，
+         * OLED 首行会显示 "ERR"，避免误以为是积分算法的问题。
+         */
+        s_tel.state = ROBOT_STATE_ERROR;
+    }
     display_init();
 }
 

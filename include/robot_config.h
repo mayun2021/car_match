@@ -27,7 +27,7 @@
  * 哪个版本。每次发布一个值得留痕的版本（调完一批参数、修完一个坑）
  * 就改这一个地方，不用去改 display.c 里的格式字符串。
  */
-#define ROBOT_FIRMWARE_VERSION         "V3"
+#define ROBOT_FIRMWARE_VERSION         "V4"
 
 /* 控制主循环周期。5 ms 对巡线和舵机控制都比较够用。 */
 #define ROBOT_CONTROL_PERIOD_MS        5u
@@ -88,7 +88,19 @@
  */
 #define ROBOT_LINE_FINISH_YAW_DEG      350.0f
 
-/* 一圈任务最大运行时间保护。 */
+/*
+ * 跑完一圈的计时兜底：和上面的偏航角判定同时生效，谁先满足就停车。
+ * MPU6050 一旦离线/读数异常导致 yaw 不再累加，这个定时器仍能按实测圈时
+ * 强制停车，不会出现"转一圈半都不停"。
+ *
+ * 需要现场标定：让车正常跑一圈，从 START 按下到车头回到停车线的实际
+ * 耗时（可读串口日志里的 time= 字段，或秒表计时），填到这里。示例值
+ * 9000ms 只是占位，必须替换成你板子在 ROBOT_LINE_BASE_SPEED 下的实测值，
+ * 否则不是提前停就是超一截才停。
+ */
+#define ROBOT_LINE_LAP_TIME_MS         9000u
+
+/* 一圈任务最大运行时间保护（应明显大于 ROBOT_LINE_LAP_TIME_MS，纯防死循环）。 */
 #define ROBOT_LINE_TASK_TIMEOUT_MS     30000u
 
 /* MG996R 舵机参数。50 Hz PWM，常用有效脉宽约 500-2500 us。 */
