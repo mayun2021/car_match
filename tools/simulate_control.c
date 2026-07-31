@@ -1,104 +1,110 @@
 /**
  * @file simulate_control.c
- * @brief 第 2 问状态机桌面回归测试：起步/驶离 A 线 + 纯偏航角判圈停车。
+ * @brief 桌面仿真入口。
+ *
+ * 该程序模拟按键、巡线传感器和 K230 数据，用于在没有 MSPM0 硬件时先验证
+ * 应用状态机、巡线 PID 调用路径和停车线识别逻辑。
  */
 
 #include "hal.h"
+#include "line_sensor.h"
 #include "robot_app.h"
 #include "robot_types.h"
 
 #include <stdio.h>
 
+/**
+ * @brief 设置仿真巡线黑线掩码。
+ *
+ * @param mask bit0=最左探头，bit3=最右探头。
+ */
 void hal_stub_set_line_mask(uint8_t mask);
+
+/**
+ * @brief 设置仿真按键状态。
+ *
+ * @param pin 按键抽象引脚。
+ * @param pressed true 表示按下。
+ */
 void hal_stub_set_key(hal_pin_t pin, bool pressed);
+
+/**
+ * @brief 向仿真 K230 串口注入文本。
+ *
+ * @param text 待注入的文本帧。
+ */
 void hal_stub_push_k230_text(const char *text);
-void hal_stub_set_gyro_z_dps(float dps);
 
-static void tick_for(uint32_t duration_ms, uint8_t mask)
+/**
+ * @brief 模拟一次按键短按。
+ *
+ * @param pin 要模拟的按键引脚。
+ */
+static void press_key(hal_pin_t pin)
 {
-    uint32_t elapsed;
-
-    hal_stub_set_line_mask(mask);
-    for (elapsed = 0u; elapsed < duration_ms; elapsed += 5u)
+    hal_stub_set_key(pin, true);
+    for (int i = 0; i < 8; ++i)
     {
-        hal_delay_ms(5u);
+        hal_delay_ms(5);
+        robot_app_tick(hal_millis());
+    }
+
+    hal_stub_set_key(pin, false);
+    for (int i = 0; i < 8; ++i)
+    {
+        hal_delay_ms(5);
         robot_app_tick(hal_millis());
     }
 }
 
-static void press_key(hal_pin_t pin)
-{
-    hal_stub_set_key(pin, true);
-    tick_for(40u, 0x00u);
-    hal_stub_set_key(pin, false);
-    tick_for(40u, 0x00u);
-}
-
+/**
+ * @brief 仿真程序主入口。
+ *
+ * @return 0 表示模拟任务完成，1 表示状态机未按预期完成。
+ */
 int main(void)
 {
-    robot_telemetry_t tel;
+    static const uint8_t line_masks[] = {
+        0x06u, /* 中间两个探头压线 */
+        0x02u, /* 略偏左 */
+        0x04u, /* 略偏右 */
+        0x08u, /* 黑线在最右 */
+        0x01u, /* 黑线在最左 */
+        0x0Fu  /* A 点停车线 */
+    };
 
     hal_init();
     robot_app_init();
-    hal_stub_set_gyro_z_dps(0.0f);
 
-    /*
-     * 在题图的白色 A 线上启动。起跑投票需要 ROBOT_Q2_START_VOTE_SAMPLES
-     * （16 个采样，每 5 ms 一个）才能判定“稳定停在白线上”，
-     * 预热时间必须多于 16 * 5 = 80 ms，否则会被误判为起跑不稳。
-     */
-    tick_for(100u, 0x00u);
+    puts("simulate: start line-following mode");
     press_key(HAL_PIN_KEY_START);
 
-    /* 停留在起点时绝不能误判完成。 */
-    tick_for(180u, 0x00u);
-    tel = robot_app_get_telemetry();
-    if (tel.phase != ROBOT_PHASE_Q2_LEAVE_A)
+    for (unsigned step = 0; step < 1400u; ++step)
     {
-        puts("FAIL: did not remain in LEAVE_A");
-        return 1;
+        if (step < 1100u)
+        {
+            hal_stub_set_line_mask(line_masks[step % 5u]);
+        }
+        else
+        {
+            hal_stub_set_line_mask(line_masks[5]);
+        }
+
+        if ((step % 10u) == 0u)
+        {
+            hal_stub_push_k230_text("B:0.0\n");
+        }
+
+        hal_delay_ms(5u);
+        robot_app_tick(hal_millis());
     }
 
-    /*
-     * 驶离白线并稳定看到正常黑线，进入巡线阶段。用恒定 40 dps 角速度模拟
-     * 绕场一圈：起步 700 ms 内偏航仍远低于防原地打转门槛（35°），
-     * 约 8.75 s 后偏航角越过 ROBOT_Q2_FINISH_YAW_DEG（350°）。
-     */
-    tick_for(150u, 0x06u);
-    hal_stub_set_gyro_z_dps(40.0f);
-
-    /* 转到约一半（角度约 200°）时，纯角度判定绝不能提前停车。 */
-    tick_for(4850u, 0x06u);
-    tel = robot_app_get_telemetry();
-    if (tel.state != ROBOT_STATE_RUNNING ||
-        tel.phase != ROBOT_PHASE_Q2_FOLLOW)
-    {
-        puts("FAIL: stopped before completing the lap");
-        return 2;
-    }
-
-    /* 继续转过 350°（无需任何视觉终点标记），应主动刹车并锁存成绩。 */
-    tick_for(4000u, 0x06u);
-    tick_for(180u, 0x06u);
-    tel = robot_app_get_telemetry();
-
-    printf("final mode=%d state=%d phase=%d yaw=%.1f time=%lu valid=%d\n",
+    const robot_telemetry_t tel = robot_app_get_telemetry();
+    printf("simulate: final mode=%d state=%d left=%d right=%d servo=%u\n",
            (int)tel.mode,
            (int)tel.state,
-           (int)tel.phase,
-           (double)tel.yaw_deg,
-           (unsigned long)tel.result_time_ms,
-           tel.result_valid ? 1 : 0);
-
-    if (tel.state != ROBOT_STATE_FINISHED ||
-        tel.phase != ROBOT_PHASE_Q2_DONE ||
-        !tel.result_valid ||
-        tel.left_pwm != 0 ||
-        tel.right_pwm != 0)
-    {
-        puts("FAIL: lap did not finish safely");
-        return 3;
-    }
-
-    return 0;
+           tel.left_pwm,
+           tel.right_pwm,
+           tel.servo_us);
+    return tel.state == ROBOT_STATE_FINISHED ? 0 : 1;
 }

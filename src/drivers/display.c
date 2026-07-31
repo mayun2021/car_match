@@ -1,6 +1,9 @@
 /**
  * @file display.c
- * @brief 第 2、3 问 OLED 比赛界面。
+ * @brief 调试显示/OLED 输出实现。
+ *
+ * 每 250 ms 把遥测数据发一行到调试串口，同时刷新到 0.96 寸 SSD1306
+ * OLED（128x64，8 行 x 8 像素点阵字符，见 oled.h）。
  */
 
 #include "display.h"
@@ -10,252 +13,130 @@
 
 #include <stdio.h>
 
-static const char *phase_text(robot_phase_t phase)
-{
-    switch (phase)
-    {
-    case ROBOT_PHASE_READY:
-        return "READY";
-    case ROBOT_PHASE_Q2_LEAVE_A:
-        return "LEAVE A";
-    case ROBOT_PHASE_Q2_FOLLOW:
-        return "FOLLOW";
-    case ROBOT_PHASE_Q2_BRAKE:
-        return "BRAKE";
-    case ROBOT_PHASE_Q2_DONE:
-        return "LAP DONE";
-    case ROBOT_PHASE_Q3_WAIT_ACK:
-        return "WAIT K230";
-    case ROBOT_PHASE_Q3_TO_POS:
-        return "TO +5CM";
-    case ROBOT_PHASE_Q3_TO_NEG:
-        return "TO -5CM";
-    case ROBOT_PHASE_Q3_HOLD_NEG:
-        return "HOLD -5";
-    case ROBOT_PHASE_Q3_DONE:
-        return "BALL DONE";
-    default:
-        return "FAULT";
-    }
-}
-
-static const char *fault_text(robot_fault_t fault)
-{
-    switch (fault)
-    {
-    case ROBOT_FAULT_Q2_LEAVE_A_TIMEOUT:
-        return "LEAVE TIMEOUT";
-    case ROBOT_FAULT_Q2_LINE_LOST:
-        return "LINE LOST";
-    case ROBOT_FAULT_Q2_TIMEOUT:
-        return "LAP TIMEOUT";
-    case ROBOT_FAULT_Q2_SPIN:
-        return "SPIN/WIRING";
-    case ROBOT_FAULT_Q2_IMU_REQUIRED:
-        return "MPU NEEDED";
-    case ROBOT_FAULT_Q2_START_UNSTABLE:
-        return "ALIGN A MARK";
-    case ROBOT_FAULT_Q3_NO_ACK:
-        return "NO K230 ACK";
-    case ROBOT_FAULT_Q3_VISION:
-        return "K230/VIS LOST";
-    case ROBOT_FAULT_Q3_TIMEOUT:
-        return "BALL TIMEOUT";
-    case ROBOT_FAULT_Q3_REMOTE:
-        return "K230 FAULT";
-    default:
-        return "NONE";
-    }
-}
-
+/**
+ * @brief 初始化调试显示模块和 OLED。
+ */
 void display_init(void)
 {
+    hal_uart_debug_write("display: debug output ready\r\n");
     oled_init();
-    hal_uart_debug_write("display ready\r\n");
 }
 
-static void draw_time(uint8_t y, uint32_t time_ms)
+/**
+ * @brief 把运行状态枚举转换成定长的 4 字符缩写，方便对齐显示。
+ *
+ * @param state 当前任务状态。
+ * @return 4 个字符（不含结尾符）的状态缩写。
+ */
+static const char *state_text(robot_state_t state)
+{
+    switch (state)
+    {
+    case ROBOT_STATE_IDLE:
+        return "IDLE";
+    case ROBOT_STATE_RUNNING:
+        return "RUN ";
+    case ROBOT_STATE_FINISHED:
+        return "DONE";
+    default:
+        return "ERR ";
+    }
+}
+
+/**
+ * @brief 按固定排版把遥测数据画到 OLED 帧缓冲并刷新。
+ *
+ * 屏幕共 8 行（每行 8 像素）：模式/状态、运行用时、巡线误差、
+ * 红外掩码、钢球位置、电机速度百分比、偏航角、按键功能提示。
+ *
+ * @param telemetry 当前机器人遥测数据。
+ */
+static void oled_render(const robot_telemetry_t *telemetry)
 {
     char line[17];
-
-    (void)snprintf(line,
-                   sizeof(line),
-                   "TIME:%2lu.%03luS",
-                   (unsigned long)(time_ms / 1000u),
-                   (unsigned long)(time_ms % 1000u));
-    oled_draw_string(0, y, line);
-}
-
-static void render_q2(const robot_telemetry_t *telemetry)
-{
-    char line[17];
-    const uint32_t time_ms = telemetry->result_valid
-        ? telemetry->result_time_ms
-        : telemetry->run_elapsed_ms;
-
-    (void)snprintf(
-        line, sizeof(line), "Q2 %s", phase_text(telemetry->phase));
-    oled_draw_string(0, 0, line);
-    draw_time(8, time_ms);
-
-    (void)snprintf(line,
-                   sizeof(line),
-                   "MASK:%X CNT:%u",
-                   (unsigned int)telemetry->line_mask,
-                   (unsigned int)(
-                       ((telemetry->line_mask >> 0) & 1u) +
-                       ((telemetry->line_mask >> 1) & 1u) +
-                       ((telemetry->line_mask >> 2) & 1u) +
-                       ((telemetry->line_mask >> 3) & 1u)));
-    oled_draw_string(0, 16, line);
-
-    (void)snprintf(line,
-                   sizeof(line),
-                   "ERR:%5d",
-                   (int)telemetry->line_error);
-    oled_draw_string(0, 24, line);
-
-    (void)snprintf(line,
-                   sizeof(line),
-                   "PWM:%d/%d",
-                   (int)telemetry->left_pwm,
-                   (int)telemetry->right_pwm);
-    oled_draw_string(0, 32, line);
-
-    (void)snprintf(line,
-                   sizeof(line),
-                   "YAW:%d RATE:%d",
-                   (int)telemetry->yaw_deg,
-                   (int)telemetry->yaw_rate_dps);
-    oled_draw_string(0, 40, line);
-
-    if (telemetry->state == ROBOT_STATE_ERROR)
-    {
-        (void)snprintf(
-            line, sizeof(line), "FAIL:%s", fault_text(telemetry->fault));
-        oled_draw_string(0, 48, line);
-    }
-    else if (telemetry->result_valid)
-    {
-        oled_draw_string(0, 48, "RESULT LOCKED");
-    }
-    else
-    {
-        if (telemetry->q2_marker_locked)
-        {
-            oled_draw_string(
-                0,
-                48,
-                telemetry->q2_marker_black ? "A:BLACK LOCKED" :
-                                             "A:WHITE LOCKED");
-        }
-        else
-        {
-            oled_draw_string(0, 48, "A:AUTO DETECT");
-        }
-    }
-
-    oled_draw_string(0, 56, "K2 MODE K3 GO");
-}
-
-static void render_q3(const robot_telemetry_t *telemetry)
-{
-    char line[17];
-    const uint32_t time_ms = telemetry->result_valid
-        ? telemetry->result_time_ms
-        : telemetry->run_elapsed_ms;
-
-    (void)snprintf(
-        line, sizeof(line), "Q3 %s", phase_text(telemetry->phase));
-    oled_draw_string(0, 0, line);
-    draw_time(8, time_ms);
-
-    (void)snprintf(
-        line, sizeof(line), "BALL:%+4dMM", (int)telemetry->ball_x_mm);
-    oled_draw_string(0, 16, line);
-
-    (void)snprintf(line,
-                   sizeof(line),
-                   "T:%+3d E:%+3d",
-                   (int)telemetry->ball_target_mm,
-                   (int)telemetry->ball_error_mm);
-    oled_draw_string(0, 24, line);
-
-    (void)snprintf(line,
-                   sizeof(line),
-                   "SERVO:%4uUS",
-                   (unsigned int)telemetry->servo_us);
-    oled_draw_string(0, 32, line);
-
-    (void)snprintf(line,
-                   sizeof(line),
-                   "LINK:%s VIS:%s",
-                   telemetry->k230_link ? "OK" : "--",
-                   telemetry->vision_valid ? "OK" : "--");
-    oled_draw_string(0, 40, line);
-
-    if (telemetry->state == ROBOT_STATE_ERROR)
-    {
-        (void)snprintf(
-            line, sizeof(line), "FAIL:%s", fault_text(telemetry->fault));
-        oled_draw_string(0, 48, line);
-    }
-    else if (telemetry->result_valid)
-    {
-        oled_draw_string(0, 48, "HOLDING -5CM");
-    }
-    else
-    {
-        oled_draw_string(0, 48, "K1=NEUTRAL");
-    }
-
-    oled_draw_string(0, 56, "K2 MODE K3 GO");
-}
-
-void display_update(const robot_telemetry_t *telemetry)
-{
-    static uint32_t s_last_refresh_ms;
-    static robot_mode_t s_last_mode;
-    static robot_state_t s_last_state;
-    static robot_phase_t s_last_phase;
-    static bool s_have_last_frame;
-    const bool state_changed =
-        !s_have_last_frame ||
-        telemetry->mode != s_last_mode ||
-        telemetry->state != s_last_state ||
-        telemetry->phase != s_last_phase;
-
-    /*
-     * SSD1306 全屏经软件 I2C 刷新约占用二十多毫秒，会打断 5 ms 循迹周期。
-     * 第2问只要求停车后显示总时间，因此 LEAVE/FOLLOW/BRAKE 期间保留上一帧，
-     * 等完成、故障或急停后立即刷新。第3问车体静止，仍可每 250 ms 实时刷新。
-     */
-    if (telemetry->mode == ROBOT_MODE_Q2_LAP &&
-        telemetry->state == ROBOT_STATE_RUNNING)
-    {
-        return;
-    }
-
-    if (!state_changed &&
-        (telemetry->now_ms - s_last_refresh_ms) < 250u)
-    {
-        return;
-    }
-    s_last_refresh_ms = telemetry->now_ms;
+    int32_t avg_pwm;
+    int speed_pct;
+    const bool needs_alignment =
+        telemetry->mode != ROBOT_MODE_BALL &&
+        telemetry->state == ROBOT_STATE_IDLE &&
+        (!telemetry->line_valid ||
+         telemetry->line_mask == 0x0Fu ||
+         telemetry->line_error < -ROBOT_LINE_START_MAX_ERROR ||
+         telemetry->line_error > ROBOT_LINE_START_MAX_ERROR);
 
     oled_clear();
-    if (telemetry->mode == ROBOT_MODE_Q2_LAP)
+
+    if (needs_alignment)
     {
-        render_q2(telemetry);
+        (void)snprintf(line, sizeof(line), "M%d ALIGN V2", (int)telemetry->mode);
     }
     else
     {
-        render_q3(telemetry);
+        (void)snprintf(line, sizeof(line), "M%d %s V2",
+                       (int)telemetry->mode,
+                       state_text(telemetry->state));
     }
-    oled_flush();
+    oled_draw_string(0, 0, line);
 
-    s_last_mode = telemetry->mode;
-    s_last_state = telemetry->state;
-    s_last_phase = telemetry->phase;
-    s_have_last_frame = true;
+    (void)snprintf(line, sizeof(line), "TIME:%5.1fS", (double)telemetry->run_elapsed_ms / 1000.0);
+    oled_draw_string(0, 8, line);
+
+    (void)snprintf(line, sizeof(line), "LINE:%5.0f", (double)telemetry->line_error);
+    oled_draw_string(0, 16, line);
+
+    (void)snprintf(line, sizeof(line), "MASK:%c%c%c%c",
+                    (telemetry->line_mask & 0x01u) ? '1' : '0',
+                    (telemetry->line_mask & 0x02u) ? '1' : '0',
+                    (telemetry->line_mask & 0x04u) ? '1' : '0',
+                    (telemetry->line_mask & 0x08u) ? '1' : '0');
+    oled_draw_string(0, 24, line);
+
+    (void)snprintf(line, sizeof(line), "BALL:%6.1f", (double)telemetry->ball_x_mm);
+    oled_draw_string(0, 32, line);
+
+    avg_pwm = ((int32_t)telemetry->left_pwm + (int32_t)telemetry->right_pwm) / 2;
+    speed_pct = (int)((avg_pwm * 100) / ROBOT_MOTOR_PWM_MAX);
+    (void)snprintf(line, sizeof(line), "SPD:%4d%%", speed_pct);
+    oled_draw_string(0, 40, line);
+
+    (void)snprintf(line, sizeof(line), "YAW:%6.1f", (double)telemetry->yaw_deg);
+    oled_draw_string(0, 48, line);
+
+    oled_draw_string(0, 56, "MODE/STRT/CALIB");
+
+    oled_flush();
+}
+
+/**
+ * @brief 周期性输出机器人运行状态到调试串口和 OLED。
+ *
+ * @param telemetry 当前机器人遥测数据。
+ */
+void display_update(const robot_telemetry_t *telemetry)
+{
+    static uint32_t s_last_print_ms;
+    char buf[192];
+
+    if (telemetry->now_ms - s_last_print_ms < 250u)
+    {
+        return;
+    }
+
+    s_last_print_ms = telemetry->now_ms;
+    (void)snprintf(buf,
+                   sizeof(buf),
+                   "mode=%d state=%d line=%.0f ball=%.1f target=%.1f yaw=%.1f L=%d R=%d servo=%u time=%.1f\r\n",
+                   (int)telemetry->mode,
+                   (int)telemetry->state,
+                   (double)telemetry->line_error,
+                   (double)telemetry->ball_x_mm,
+                   (double)telemetry->ball_target_mm,
+                   (double)telemetry->yaw_deg,
+                   telemetry->left_pwm,
+                   telemetry->right_pwm,
+                   telemetry->servo_us,
+                   (double)telemetry->run_elapsed_ms / 1000.0);
+    hal_uart_debug_write(buf);
+
+    oled_render(telemetry);
 }

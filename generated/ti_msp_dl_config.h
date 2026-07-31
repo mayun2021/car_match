@@ -53,10 +53,7 @@ extern "C" {
 #define GPIO_Motor_C1_IOMUX_FUNC                     IOMUX_PINCM20_PF_TIMA0_CCP1
 #define GPIO_Motor_C1_IDX                                    DL_TIMER_CC_1_INDEX
 
-/*
- * 旧版兼容定义：当前 Q1-Q3 比赛版不会初始化/启动 TIMG8，也不会复用 PA7。
- * MG996R 只接 K230 IO42/PWM0，PA7 保持复位态并悬空。
- */
+/* TIMG8: MG996R signal=PA7, 50 Hz, 1 MHz timer tick. */
 #define Servo_INST                                                         TIMG8
 #define Servo_INST_CLK_FREQ                                              1000000
 #define SERVO_PWM_PERIOD_COUNTS                                          20000U

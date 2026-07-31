@@ -7,6 +7,7 @@
 #include "ti_msp_dl_config.h"
 
 DL_TimerA_backupConfig gMotorBackup;
+DL_TimerG_backupConfig gServoBackup;
 
 SYSCONFIG_WEAK void SYSCFG_DL_init(void)
 {
@@ -14,15 +15,18 @@ SYSCONFIG_WEAK void SYSCFG_DL_init(void)
     SYSCFG_DL_GPIO_init();
     SYSCFG_DL_SYSCTL_init();
     SYSCFG_DL_Motor_init();
+    SYSCFG_DL_Servo_init();
     SYSCFG_DL_UART_K230_init();
 
     gMotorBackup.backupRdy = false;
+    gServoBackup.backupRdy = false;
 }
 
 SYSCONFIG_WEAK bool SYSCFG_DL_saveConfiguration(void)
 {
     bool ok = true;
     ok &= DL_TimerA_saveConfiguration(Motor_INST, &gMotorBackup);
+    ok &= DL_TimerG_saveConfiguration(Servo_INST, &gServoBackup);
     return ok;
 }
 
@@ -30,6 +34,7 @@ SYSCONFIG_WEAK bool SYSCFG_DL_restoreConfiguration(void)
 {
     bool ok = true;
     ok &= DL_TimerA_restoreConfiguration(Motor_INST, &gMotorBackup, false);
+    ok &= DL_TimerG_restoreConfiguration(Servo_INST, &gServoBackup, false);
     return ok;
 }
 
@@ -38,24 +43,29 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_GPIO_reset(GPIOA);
     DL_GPIO_reset(GPIOB);
     DL_TimerA_reset(Motor_INST);
+    DL_TimerG_reset(Servo_INST);
     DL_UART_Main_reset(UART_K230_INST);
 
     DL_GPIO_enablePower(GPIOA);
     DL_GPIO_enablePower(GPIOB);
     DL_TimerA_enablePower(Motor_INST);
+    DL_TimerG_enablePower(Servo_INST);
     DL_UART_Main_enablePower(UART_K230_INST);
     delay_cycles(POWER_STARTUP_DELAY);
 }
 
 SYSCONFIG_WEAK void SYSCFG_DL_GPIO_init(void)
 {
-    /* Motor PWM pin mux. PA7 stays in its reset/high-impedance state. */
+    /* Motor and servo PWM pin mux. */
     DL_GPIO_initPeripheralOutputFunction(
         GPIO_Motor_C0_IOMUX, GPIO_Motor_C0_IOMUX_FUNC);
     DL_GPIO_enableOutput(GPIO_Motor_C0_PORT, GPIO_Motor_C0_PIN);
     DL_GPIO_initPeripheralOutputFunction(
         GPIO_Motor_C1_IOMUX, GPIO_Motor_C1_IOMUX_FUNC);
     DL_GPIO_enableOutput(GPIO_Motor_C1_PORT, GPIO_Motor_C1_PIN);
+    DL_GPIO_initPeripheralOutputFunction(
+        GPIO_Servo_C0_IOMUX, GPIO_Servo_C0_IOMUX_FUNC);
+    DL_GPIO_enableOutput(GPIO_Servo_C0_PORT, GPIO_Servo_C0_PIN);
 
     /* K230 UART: PA10 TX, PA11 RX. */
     DL_GPIO_initPeripheralOutputFunction(

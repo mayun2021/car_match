@@ -1,34 +1,18 @@
-H题第1至3问比赛版（2026-07-31）
+优先方式：打开 keil\CarMatch_MSPM0G3507.uvprojx，连接 XDS110/CMSIS-DAP，
+按 F7 编译，再按 F8 下载。
 
-唯一推荐烧录文件：
-  CarMatch_MSPM0G3507_Q1_Q3_20260731.axf
+本目录固件为稳态循迹 V2。烧录后 OLED 第一行应显示 V2。
 
-备用 Intel HEX：
-  CarMatch_MSPM0G3507_Q1_Q3_20260731.hex
+预编译文件：
+  CarMatch_MSPM0G3507.hex  通用 Intel HEX
+  CarMatch_MSPM0G3507.axf  带调试信息的 Keil 可执行文件
+  CarMatch_MSPM0G3507_STABLE_V2.hex  相同固件的 V2 文件名副本
+  CarMatch_MSPM0G3507_STABLE_V2.axf  相同固件的 V2 文件名副本
 
-不要烧旧的 STABLE_V2 文件；本目录已经将旧固件移除。
+目标芯片：MSPM0G3507SPTR，LQFP-48，128 KB Flash。
+编译结果：0 Error(s), 0 Warning(s)。
 
-芯片：MSPM0G3507SPTR，LQFP-48，128 KB Flash。
-工程：keil\CarMatch_MSPM0G3507.uvprojx
-调试器：XDS110，在 Keil 中选择 CMSIS-DAP Debugger，SW 模式。
-
-操作：
-  K2 / PA27：切换 Q2 循迹一圈、Q3 静止滚球模式。
-  K3 / PA30：启动或紧急停止当前模式。
-  K1 / PA17：Q2 清除锁定成绩；Q3 请求 K230 舵机回中。
-
-Q2：
-  小车在 A 标志处静止约 0.1 秒后按 K3。
-  A 必须是 MASK=0 的白色断线或 MASK=15 的宽黑标志；
-  普通中心循迹线 MASK=6 不是起点标志。
-  完成一圈、主动刹车后 OLED 锁定显示总时间。
-
-Q3：
-  必须先部署 companion_k230\config.py 与 main.py。
-  完成三点像素标定，并将 config.py 中
-  CALIBRATION_CONFIRMED = True 后才能启动。
-  MG996R 信号只接 K230 IO42；TI PA7 必须悬空。
-
-详细接线、烧录和安全检查见：
-  README_Keil5_先看.md
-  Keil5_烧录与首次运行说明.md
+操作按键：A30（K3）启动/停止；A27 切换模式；A17 校准。
+启动条件：模式1下先调整到 MASK=6；显示 ALIGN V2 时电机不会启动。
+丢线保护：只低速缓弯，不允许原地反转；持续丢线 350 ms 自动停车。
+首次烧录后必须架空车轮检查电机方向和停机逻辑，再落地低速调试。

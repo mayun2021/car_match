@@ -1,48 +1,63 @@
-# SysConfig 复建对照（当前比赛版）
+# CCS / SysConfig 移植说明
 
-本包已经包含可在 Keil5 直接编译的 `generated/ti_msp_dl_config.*`，普通烧录
-不需要重新运行 SysConfig。本页仅用于以后在 CCS/Theia 复建外设。
+`src/platform/hal_ti_mspm0.c` 是唯一需要和 TI SDK/SysConfig 深度绑定的文件。其它应用代码不直接碰寄存器。
 
-## GPIO
+## 1. GPIO
 
-| 名称 | 方向 | 引脚 | 说明 |
+建议在 SysConfig 中建立这些 GPIO 名称：
+
+| 建议名称 | 方向 | 引脚 | 初始状态 |
 |---|---|---|---|
-| LINE_X1…X4 | 输入 | PB2/PB3/PB4/PB5 | 黑线低电平 |
-| KEY_MODE | 输入上拉 | PA27 | K2 |
-| KEY_START | 输入上拉 | PA30 | K3 |
-| KEY_CLEAR | 输入上拉 | PA17 | K1 |
-| AIN1/AIN2 | 输出 | PA24/PA28 | TB6612 A路方向 |
-| BIN1/BIN2 | 输出 | PA22/PA14 | TB6612 B路方向 |
-| STBY | 输出 | PA25 | TB6612 使能 |
+| GPIO_LINE_L2 | 输入 | PB2 | 上拉或按模块要求 |
+| GPIO_LINE_L1 | 输入 | PB3 | 上拉或按模块要求 |
+| GPIO_LINE_R1 | 输入 | PB4 | 上拉或按模块要求 |
+| GPIO_LINE_R2 | 输入 | PB5 | 上拉或按模块要求 |
+| GPIO_MOTOR_AIN1 | 输出 | PA24 | 低 |
+| GPIO_MOTOR_AIN2 | 输出 | PA28 | 低 |
+| GPIO_MOTOR_BIN1 | 输出 | PA22 | 低 |
+| GPIO_MOTOR_BIN2 | 输出 | PA14 | 低 |
+| GPIO_MOTOR_STBY | 输出 | PA25 | 高 |
+| GPIO_KEY_MODE | 输入 | PA27 | 内部上拉 |
+| GPIO_KEY_START | 输入 | PA30（底板 K3/A30） | 内部上拉 |
+| GPIO_KEY_CALIB | 输入 | PA17 | 内部上拉 |
 
-## PWM
+## 2. PWM
 
-| 名称 | 引脚 | 频率 | 用途 |
-|---|---|---:|---|
+| 建议名称 | 引脚 | 频率 | 用途 |
+|---|---|---|---|
 | PWM_MOTOR_LEFT | PA8 | 2.5 kHz | TB6612 PWMA |
 | PWM_MOTOR_RIGHT | PA9 | 2.5 kHz | TB6612 PWMB |
+| PWM_SERVO | PA7 | 50 Hz | MG996R |
 
-当前比赛版没有 TI 舵机 PWM。MG996R 信号只接 K230 IO42/PWM0；PA7 悬空。
+电机 PWM 用 0% 到 100% 占空比。舵机 PWM 用 20 ms 周期，比较值对应 700 us 到 2300 us。
 
-## I2C
+## 3. I2C
 
-| 总线 | SCL/SDA | 设备 |
+| 建议名称 | 引脚 | 频率 |
 |---|---|---|
-| I2C0 | PA15/PA16 | SSD1306 0x3C、MPU6050 0x68 |
+| I2C_MPU | PA16 SDA / PA15 SCL | 100 kHz 或 400 kHz |
 
-## UART
+MPU6050 地址默认 `0x68`。同一条总线上还挂了 OLED（SSD1306，地址默认 `0x3C`），两个设备靠地址区分，SysConfig 里只需要建一路 I2C。
 
-| 外设 | TI 引脚 | 参数 |
+## 4. UART
+
+| 建议名称 | 引脚 | 参数 |
 |---|---|---|
-| UART_K230 | PA10 TX、PA11 RX | 115200, 8N1 |
+| UART_K230 | PA10 RX / PA11 TX | 115200, 8N1 |
+| UART_DEBUG | 可选 | 115200, 8N1 |
 
-交叉连接：
+K230 接 TI 时要注意交叉连接：K230 TX 接 MSPM0 RX，K230 RX 接 MSPM0 TX。
 
-```text
-PA10/TX -> K230 IO45/UART2_RX
-PA11/RX <- K230 IO44/UART2_TX
-GND     -- GND
-```
+## 5. 推荐中断
 
-RX 中断把字节放入环形缓冲区，应用层非阻塞解析一行 ASCII 协议。不要使用旧文档
-中的 `B:0.0` 或 `$BALL` 作为任务心跳；当前协议见 `k230_protocol.md`。
+- 1 ms SysTick 或 Timer：维护 `g_systick_ms`。
+- UART_K230 RX：把接收字节放入环形缓冲区，`hal_uart_k230_read_byte()` 非阻塞取出。
+- I2C 可先用阻塞式，代码简单，后续再改 DMA/中断。
+
+## 6. 上板最小验证
+
+1. 只验证 GPIO：按键切换模式，调试串口能看到 mode 改变。
+2. 只验证 PWM：舵机回中，电机空载转动方向正确。
+3. 只验证 I2C：MPU6050 初始化成功，静止 yaw 变化很小；OLED 能显示 `oled_init()` 之后的初始画面。
+4. 只验证 UART：K230 发送 `B:0.0`，调试输出中 `vision_valid=1` 或 ball 值更新。
+5. 再合并运行模式一、二、三。

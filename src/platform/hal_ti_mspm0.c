@@ -228,6 +228,7 @@ void hal_init(void)
     SYSCFG_DL_init();
 
     DL_TimerA_startCounter(Motor_INST);
+    DL_TimerG_startCounter(Servo_INST);
 
     NVIC_ClearPendingIRQ(UART_K230_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_K230_INST_INT_IRQN);
@@ -352,12 +353,22 @@ void hal_pwm_set_duty_permille(hal_pwm_t pwm, uint16_t permille)
 
 void hal_pwm_set_servo_us(hal_pwm_t pwm, uint16_t pulse_us)
 {
-    /*
-     * 第3问的 MG996R 只由 K230 IO42/PWM0 控制。TI PA7 必须保持悬空，
-     * 因此本兼容接口故意不产生任何波形。
-     */
-    (void)pwm;
-    (void)pulse_us;
+    if (pwm != HAL_PWM_SERVO)
+    {
+        return;
+    }
+
+    if (pulse_us < 500U)
+    {
+        pulse_us = 500U;
+    }
+    else if (pulse_us > 2500U)
+    {
+        pulse_us = 2500U;
+    }
+
+    DL_TimerG_setCaptureCompareValue(
+        Servo_INST, pulse_us, GPIO_Servo_C0_IDX);
 }
 
 bool hal_i2c_write(uint8_t addr, const uint8_t *data, size_t len)
@@ -440,21 +451,6 @@ int hal_uart_k230_read_byte(void)
     s_uart_rx_tail =
         (uint8_t)((s_uart_rx_tail + 1U) & UART_RX_BUFFER_MASK);
     return (int)value;
-}
-
-void hal_uart_k230_write(const char *text)
-{
-    if (text == NULL)
-    {
-        return;
-    }
-
-    while (*text != '\0')
-    {
-        DL_UART_Main_transmitDataBlocking(
-            UART_K230_INST, (uint8_t)*text);
-        ++text;
-    }
 }
 
 void hal_uart_debug_write(const char *text)

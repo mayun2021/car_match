@@ -7,7 +7,6 @@
  */
 
 #include "hal.h"
-#include "robot_config.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -18,18 +17,6 @@ static uint32_t s_now_ms;
 static char s_uart_rx[256];
 static size_t s_uart_rx_read;
 static size_t s_uart_rx_write;
-/* MPU6050 仿真陀螺仪 Z 轴角速度，单位 dps，供测试驱动偏航角积分。 */
-static int16_t s_mpu_gyro_z_raw;
-
-/**
- * @brief 设置仿真 MPU6050 陀螺仪 Z 轴角速度，用于驱动偏航角积分测试。
- *
- * @param dps 角速度，单位 度/秒。
- */
-void hal_stub_set_gyro_z_dps(float dps)
-{
-    s_mpu_gyro_z_raw = (int16_t)(dps * 131.0f);
-}
 
 /**
  * @brief 设置仿真的四路巡线传感器黑线掩码。
@@ -174,52 +161,39 @@ void hal_pwm_set_servo_us(hal_pwm_t pwm, uint16_t pulse_us)
 }
 
 /**
- * @brief 仿真 I2C 写接口，恒定成功（OLED/MPU6050 寄存器写入不需要具体行为）。
+ * @brief 仿真 I2C 写接口。
  *
  * @param addr 从机地址。
  * @param data 写入数据。
  * @param len 写入长度。
- * @return 恒定为 true。
+ * @return 当前仿真未接 MPU6050，因此固定返回 false。
  */
 bool hal_i2c_write(uint8_t addr, const uint8_t *data, size_t len)
 {
     (void)addr;
     (void)data;
     (void)len;
-    return true;
+    return false;
 }
 
 /**
  * @brief 仿真 I2C 先写后读接口。
- *
- * 只模拟 MPU6050 一次性读取 ACCEL_XOUT 起始的 14 字节：加速度和陀螺 X/Y
- * 固定为 0，陀螺 Z 使用 hal_stub_set_gyro_z_dps() 设置的仿真角速度，
- * 供桌面测试驱动偏航角积分（例如验证跑完一圈的角度判定）。
  *
  * @param addr 从机地址。
  * @param tx 写入数据。
  * @param tx_len 写入长度。
  * @param rx 读取缓冲区。
  * @param rx_len 读取长度。
- * @return 恒定为 true。
+ * @return 当前仿真未接 MPU6050，因此固定返回 false。
  */
 bool hal_i2c_write_read(uint8_t addr, const uint8_t *tx, size_t tx_len, uint8_t *rx, size_t rx_len)
 {
+    (void)addr;
     (void)tx;
     (void)tx_len;
-
-    if (addr == ROBOT_MPU6050_ADDR && rx_len == 14u)
-    {
-        memset(rx, 0, rx_len);
-        rx[12] = (uint8_t)((uint16_t)s_mpu_gyro_z_raw >> 8);
-        rx[13] = (uint8_t)((uint16_t)s_mpu_gyro_z_raw & 0xFFu);
-    }
-    else if (rx_len > 0u)
-    {
-        memset(rx, 0, rx_len);
-    }
-
-    return true;
+    (void)rx;
+    (void)rx_len;
+    return false;
 }
 
 /**
@@ -234,17 +208,6 @@ int hal_uart_k230_read_byte(void)
         return -1;
     }
     return (unsigned char)s_uart_rx[s_uart_rx_read++];
-}
-
-/**
- * @brief 在桌面仿真中把发给 K230 的命令打印出来。
- */
-void hal_uart_k230_write(const char *text)
-{
-    if (text != NULL)
-    {
-        fputs(text, stdout);
-    }
 }
 
 /**

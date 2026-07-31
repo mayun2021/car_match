@@ -3,7 +3,6 @@
   D:\keil5\ARM\ARMCLANG\Bin\..\include\stdbool.h \
   D:\keil5\ARM\ARMCLANG\Bin\..\include\stdint.h ../include\hal.h \
   D:\keil5\ARM\ARMCLANG\Bin\..\include\stddef.h \
-  ../include\robot_config.h D:\keil5\ARM\ARMCLANG\Bin\..\include\math.h \
-  D:\keil5\ARM\ARMCLANG\Bin\..\include\stdio.h \
+  ../include\robot_config.h \
   D:\keil5\ARM\ARMCLANG\Bin\..\include\stdlib.h \
   D:\keil5\ARM\ARMCLANG\Bin\..\include\string.h

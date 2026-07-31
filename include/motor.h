@@ -30,14 +30,6 @@ void motor_set_raw(int16_t left, int16_t right);
 void motor_stop(void);
 
 /**
- * @brief TB6612 主动短刹车。
- *
- * 两路 H 桥保持使能并把同侧两个方向输入同时拉高，PWM 置 100%。
- * 调用者必须只保持 ROBOT_Q2_ACTIVE_BRAKE_MS，随后调用 motor_stop()。
- */
-void motor_brake(void);
-
-/**
  * @brief 获取当前左轮 PWM 命令。
  *
  * @return 左轮当前速度命令。
