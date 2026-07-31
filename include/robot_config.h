@@ -56,8 +56,7 @@
 #define ROBOT_LINE_KD                  0.00f
 #define ROBOT_LINE_CORRECTION_LIMIT    140.0f
 
-/* 启动时必须已经压住黑线；运行中丢线只允许短时缓弯，随后安全停车。 */
-#define ROBOT_LINE_START_MAX_ERROR     400.0f
+/* 运行中丢线只允许短时缓弯，随后安全停车。 */
 #define ROBOT_LINE_LOST_STOP_MS        350u
 
 /* 只有同时满足居中和低偏航角速度时，才使用直线加速值。 */
@@ -83,13 +82,12 @@
 #define ROBOT_Q2_LEAVE_CLEAR_MS          90u
 #define ROBOT_Q2_LEAVE_TIMEOUT_MS      1200u
 #define ROBOT_Q2_FINISH_MIN_MS         8000u
+/* 300°起进入弯道降速段，350°视为跑完一圈，纯靠陀螺积分角度判定，不再依赖视觉终点标记。 */
 #define ROBOT_Q2_MIN_LAP_YAW_DEG        300.0f
+#define ROBOT_Q2_FINISH_YAW_DEG         350.0f
 #define ROBOT_Q2_FINISH_APPROACH_SPEED   205
-#define ROBOT_Q2_MARKER_CONFIRM_MS       30u
 #define ROBOT_Q2_ACTIVE_BRAKE_MS         120u
 #define ROBOT_Q2_TASK_TIMEOUT_MS       19800u
-#define ROBOT_Q2_WHITE_MARKER_MAX_DPS    18.0f
-#define ROBOT_Q2_WHITE_MARKER_ARM_MS     120u
 
 /*
  * 第 3 问由 K230 本地完成视觉 + 舵机闭环；MSPM0 只负责按键、OLED、

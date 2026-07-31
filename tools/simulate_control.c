@@ -1,6 +1,6 @@
 /**
  * @file simulate_control.c
- * @brief 第 2 问白色 A 线状态机桌面回归测试。
+ * @brief 第 2 问状态机桌面回归测试：起步/驶离 A 线 + 纯偏航角判圈停车。
  */
 
 #include "hal.h"
@@ -12,6 +12,7 @@
 void hal_stub_set_line_mask(uint8_t mask);
 void hal_stub_set_key(hal_pin_t pin, bool pressed);
 void hal_stub_push_k230_text(const char *text);
+void hal_stub_set_gyro_z_dps(float dps);
 
 static void tick_for(uint32_t duration_ms, uint8_t mask)
 {
@@ -39,9 +40,14 @@ int main(void)
 
     hal_init();
     robot_app_init();
+    hal_stub_set_gyro_z_dps(0.0f);
 
-    /* 在题图的白色 A 线上启动。 */
-    tick_for(30u, 0x00u);
+    /*
+     * 在题图的白色 A 线上启动。起跑投票需要 ROBOT_Q2_START_VOTE_SAMPLES
+     * （16 个采样，每 5 ms 一个）才能判定“稳定停在白线上”，
+     * 预热时间必须多于 16 * 5 = 80 ms，否则会被误判为起跑不稳。
+     */
+    tick_for(100u, 0x00u);
     press_key(HAL_PIN_KEY_START);
 
     /* 停留在起点时绝不能误判完成。 */
@@ -53,30 +59,34 @@ int main(void)
         return 1;
     }
 
-    /* 驶离白线并稳定看到正常黑线，随后跑过最短圈时。 */
+    /*
+     * 驶离白线并稳定看到正常黑线，进入巡线阶段。用恒定 40 dps 角速度模拟
+     * 绕场一圈：起步 700 ms 内偏航仍远低于防原地打转门槛（35°），
+     * 约 8.75 s 后偏航角越过 ROBOT_Q2_FINISH_YAW_DEG（350°）。
+     */
     tick_for(150u, 0x06u);
-    tick_for(4800u, 0x06u);
+    hal_stub_set_gyro_z_dps(40.0f);
 
-    /* 白线脉冲不足确认时间，不能停车。 */
-    tick_for(15u, 0x00u);
-    tick_for(50u, 0x06u);
+    /* 转到约一半（角度约 200°）时，纯角度判定绝不能提前停车。 */
+    tick_for(4850u, 0x06u);
     tel = robot_app_get_telemetry();
     if (tel.state != ROBOT_STATE_RUNNING ||
         tel.phase != ROBOT_PHASE_Q2_FOLLOW)
     {
-        puts("FAIL: short marker pulse caused a stop");
+        puts("FAIL: stopped before completing the lap");
         return 2;
     }
 
-    /* 回到 A：白线稳定确认，主动刹车后锁存完成时间。 */
-    tick_for(45u, 0x00u);
-    tick_for(180u, 0x00u);
+    /* 继续转过 350°（无需任何视觉终点标记），应主动刹车并锁存成绩。 */
+    tick_for(4000u, 0x06u);
+    tick_for(180u, 0x06u);
     tel = robot_app_get_telemetry();
 
-    printf("final mode=%d state=%d phase=%d time=%lu valid=%d\n",
+    printf("final mode=%d state=%d phase=%d yaw=%.1f time=%lu valid=%d\n",
            (int)tel.mode,
            (int)tel.state,
            (int)tel.phase,
+           (double)tel.yaw_deg,
            (unsigned long)tel.result_time_ms,
            tel.result_valid ? 1 : 0);
 

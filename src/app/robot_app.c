@@ -50,8 +50,6 @@ static button_t s_key_calib;
 static uint32_t s_last_tick_ms;
 static uint32_t s_task_start_ms;
 static uint32_t s_line_lost_since_ms;
-static uint32_t s_last_line_seen_ms;
-static uint32_t s_marker_since_ms;
 static uint32_t s_marker_clear_since_ms;
 static uint32_t s_brake_start_ms;
 static uint32_t s_q3_last_command_ms;
@@ -60,10 +58,8 @@ static uint32_t s_q3_last_status_ms;
 static uint32_t s_q3_hold_bad_since_ms;
 
 static float s_previous_yaw_deg;
-static float s_last_valid_line_error;
 static bool s_have_previous_yaw;
 static bool s_imu_online;
-static bool s_q2_finish_armed;
 static q2_marker_t s_q2_marker;
 static q2_brake_reason_t s_q2_brake_reason;
 static uint16_t s_q3_seq;
@@ -126,13 +122,11 @@ static void reset_task_runtime(void)
 {
     pid_reset(&s_line_pid);
     s_line_lost_since_ms = 0u;
-    s_marker_since_ms = 0u;
     s_marker_clear_since_ms = 0u;
     s_brake_start_ms = 0u;
     s_q3_last_status_ms = 0u;
     s_q3_last_keepalive_ms = 0u;
     s_q3_hold_bad_since_ms = 0u;
-    s_q2_finish_armed = false;
     s_tel.run_elapsed_ms = 0u;
     s_tel.result_time_ms = 0u;
     s_tel.result_valid = false;
@@ -230,7 +224,6 @@ static void enter_ready(void)
     s_tel.run_elapsed_ms = 0u;
     s_tel.result_time_ms = 0u;
     s_tel.result_valid = false;
-    s_marker_since_ms = 0u;
     s_marker_clear_since_ms = 0u;
     s_line_lost_since_ms = 0u;
     s_tel.q2_marker_locked = false;
@@ -286,7 +279,6 @@ static void begin_q2_brake(q2_brake_reason_t reason,
 {
     s_q2_brake_reason = reason;
     s_brake_start_ms = now_ms;
-    s_marker_since_ms = 0u;
     s_tel.phase = ROBOT_PHASE_Q2_BRAKE;
     s_tel.fault = fault;
     s_tel.result_valid = false;
@@ -570,8 +562,6 @@ static void update_q2_leave(const line_sample_t *line, uint32_t now_ms)
         else if ((now_ms - s_marker_clear_since_ms) >=
                  ROBOT_Q2_LEAVE_CLEAR_MS)
         {
-            s_q2_finish_armed = true;
-            s_marker_since_ms = 0u;
             s_line_lost_since_ms = 0u;
             pid_reset(&s_line_pid);
             s_tel.phase = ROBOT_PHASE_Q2_FOLLOW;
@@ -589,38 +579,6 @@ static void update_q2_leave(const line_sample_t *line, uint32_t now_ms)
             ROBOT_FAULT_Q2_LEAVE_A_TIMEOUT,
             now_ms);
     }
-}
-
-static bool q2_finish_marker_candidate(const line_sample_t *line,
-                                       uint32_t now_ms)
-{
-    if (!s_q2_finish_armed ||
-        (now_ms - s_task_start_ms) < ROBOT_Q2_FINISH_MIN_MS ||
-        !s_imu_online ||
-        absf_local(s_tel.yaw_deg) < ROBOT_Q2_MIN_LAP_YAW_DEG)
-    {
-        return false;
-    }
-
-    if (s_q2_marker == Q2_MARKER_BLACK)
-    {
-        return q2_black_marker(line) &&
-               absf_local(s_tel.yaw_rate_dps) <=
-                   ROBOT_Q2_WHITE_MARKER_MAX_DPS;
-    }
-
-    /*
-     * 题图的 A 点是白色线。仅在直线、刚刚还看见正常黑线时，把 MASK=0
-     * 识别为白色停车标志；弯道长时间丢线不会被当成终点。
-     */
-    return line->mask == 0u &&
-           absf_local(s_last_valid_line_error) <=
-               ROBOT_LINE_START_MAX_ERROR &&
-           (!s_imu_online ||
-            absf_local(s_tel.yaw_rate_dps) <=
-                ROBOT_Q2_WHITE_MARKER_MAX_DPS) &&
-           (now_ms - s_last_line_seen_ms) <=
-               ROBOT_Q2_WHITE_MARKER_ARM_MS;
 }
 
 static void update_q2_follow(const line_sample_t *line,
@@ -645,27 +603,19 @@ static void update_q2_follow(const line_sample_t *line,
         return;
     }
 
-    if (q2_finish_marker_candidate(line, now_ms))
+    /*
+     * 跑完一圈纯靠 MPU6050 累计偏航角判定：起始角度为 0，转过
+     * ROBOT_Q2_FINISH_YAW_DEG（350°）即视为绕场一圈完成，直接刹车，
+     * 不再依赖 A 点视觉标记（黑/白线）。
+     */
+    if (s_imu_online &&
+        elapsed_ms >= ROBOT_Q2_FINISH_MIN_MS &&
+        absf_local(s_tel.yaw_deg) >= ROBOT_Q2_FINISH_YAW_DEG)
     {
-        if (s_marker_since_ms == 0u)
-        {
-            s_marker_since_ms = now_ms;
-        }
-
-        /* 穿过白线的确认窗口保持直行，不能进入丢线搜索。 */
-        motor_set_raw(ROBOT_Q2_FINISH_APPROACH_SPEED,
-                      ROBOT_Q2_FINISH_APPROACH_SPEED);
-
-        if ((now_ms - s_marker_since_ms) >=
-            ROBOT_Q2_MARKER_CONFIRM_MS)
-        {
-            begin_q2_brake(
-                Q2_BRAKE_FINISH, ROBOT_FAULT_NONE, now_ms);
-        }
+        begin_q2_brake(Q2_BRAKE_FINISH, ROBOT_FAULT_NONE, now_ms);
         return;
     }
 
-    s_marker_since_ms = 0u;
     run_line_control(line, dt_s, now_ms);
 }
 
@@ -984,11 +934,6 @@ void robot_app_tick(uint32_t now_ms)
     s_tel.line_error = line.error;
     s_tel.line_valid = line.valid;
     s_tel.line_mask = line.mask;
-    if (line.valid)
-    {
-        s_last_line_seen_ms = now_ms;
-        s_last_valid_line_error = line.error;
-    }
     if (s_tel.mode == ROBOT_MODE_Q2_LAP &&
         s_tel.state != ROBOT_STATE_RUNNING)
     {
