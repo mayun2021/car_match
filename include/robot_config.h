@@ -22,6 +22,13 @@
 
 #include <stdint.h>
 
+/*
+ * 固件版本号，显示在 OLED 第一行右侧，方便现场一眼确认板子上跑的是
+ * 哪个版本。每次发布一个值得留痕的版本（调完一批参数、修完一个坑）
+ * 就改这一个地方，不用去改 display.c 里的格式字符串。
+ */
+#define ROBOT_FIRMWARE_VERSION         "V2"
+
 /* 控制主循环周期。5 ms 对巡线和舵机控制都比较够用。 */
 #define ROBOT_CONTROL_PERIOD_MS        5u
 

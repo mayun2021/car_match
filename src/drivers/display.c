@@ -68,13 +68,15 @@ static void oled_render(const robot_telemetry_t *telemetry)
 
     if (needs_alignment)
     {
-        (void)snprintf(line, sizeof(line), "M%d ALIGN V2", (int)telemetry->mode);
+        (void)snprintf(line, sizeof(line), "M%d ALIGN %s",
+                       (int)telemetry->mode, ROBOT_FIRMWARE_VERSION);
     }
     else
     {
-        (void)snprintf(line, sizeof(line), "M%d %s V2",
+        (void)snprintf(line, sizeof(line), "M%d %s %s",
                        (int)telemetry->mode,
-                       state_text(telemetry->state));
+                       state_text(telemetry->state),
+                       ROBOT_FIRMWARE_VERSION);
     }
     oled_draw_string(0, 0, line);
 
