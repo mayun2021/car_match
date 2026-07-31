@@ -9,7 +9,7 @@ flowchart TD
     Select --> Idle
     Idle -->|"START 键"| Running["RUNNING 运行"]
     Running -->|"START 键"| Idle
-    Running -->|"任务完成/超时/停车线"| Finished["FINISHED 停止显示结果"]
+    Running -->|"任务完成/超时/绕场一圈"| Finished["FINISHED 停止显示结果"]
     Finished -->|"START 键"| Running
     Idle -->|"CALIB 键"| Calib["MPU 零偏校准 + 舵机回中"]
     Calib --> Idle
@@ -24,11 +24,15 @@ flowchart TD
     C --> D["PID 输出差速修正"]
     D --> E["左轮=基础速度+修正 右轮=基础速度-修正"]
     B -->|"否"| F["按上次误差方向低速找线"]
-    E --> G{"检测到全黑停车线?"}
+    E --> G{"|偏航角|>=350°?"}
     F --> G
     G -->|"是且已过起步忽略时间"| H["停车并完成"]
     G -->|"否"| A
 ```
+
+跑完一圈的判定纯靠 MPU6050 累计偏航角：起步时清零，转过
+`ROBOT_LINE_FINISH_YAW_DEG`（默认 350°）即视为绕场一圈完成，不再依赖
+四探头全黑的视觉停车线标记。
 
 ## 模式二：滚球
 

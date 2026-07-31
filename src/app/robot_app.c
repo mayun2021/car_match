@@ -41,7 +41,6 @@ static button_t s_key_start;
 static button_t s_key_calib;
 static uint32_t s_last_tick_ms;
 static uint32_t s_task_start_ms;
-static uint32_t s_line_all_black_since_ms;
 static uint32_t s_line_lost_since_ms;
 static uint32_t s_ball_stage_start_ms;
 static uint32_t s_ball_stable_since_ms;
@@ -127,7 +126,6 @@ static void reset_controllers(void)
 {
     pid_reset(&s_line_pid);
     pid_reset(&s_ball_pid);
-    s_line_all_black_since_ms = 0u;
     s_line_lost_since_ms = 0u;
     s_ball_stable_since_ms = 0u;
 }
@@ -286,23 +284,15 @@ static void run_line_control(const line_sample_t *line, float dt_s, uint32_t now
     right = clamp_motor_command((float)ROBOT_LINE_BASE_SPEED - correction);
     motor_set_raw(left, right);
 
-    if (now_ms - s_task_start_ms > ROBOT_START_LINE_IGNORE_MS)
+    /*
+     * 跑完一圈纯靠 MPU6050 累计偏航角判定：起始角度为 0，转过
+     * ROBOT_LINE_FINISH_YAW_DEG（350°）即视为绕场一圈完成，直接停车，
+     * 不再依赖四探头全黑的停车线视觉标记。
+     */
+    if (now_ms - s_task_start_ms > ROBOT_START_LINE_IGNORE_MS &&
+        absf_local(s_tel.yaw_deg) >= ROBOT_LINE_FINISH_YAW_DEG)
     {
-        if (line->all_black)
-        {
-            if (s_line_all_black_since_ms == 0u)
-            {
-                s_line_all_black_since_ms = now_ms;
-            }
-            else if (now_ms - s_line_all_black_since_ms > 60u)
-            {
-                set_finished();
-            }
-        }
-        else
-        {
-            s_line_all_black_since_ms = 0u;
-        }
+        set_finished();
     }
 
     if (now_ms - s_task_start_ms > ROBOT_LINE_TASK_TIMEOUT_MS)

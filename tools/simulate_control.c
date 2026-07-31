@@ -2,8 +2,8 @@
  * @file simulate_control.c
  * @brief 桌面仿真入口。
  *
- * 该程序模拟按键、巡线传感器和 K230 数据，用于在没有 MSPM0 硬件时先验证
- * 应用状态机、巡线 PID 调用路径和停车线识别逻辑。
+ * 该程序模拟按键、巡线传感器和陀螺仪角速度，用于在没有 MSPM0 硬件时先
+ * 验证应用状态机、巡线 PID 调用路径和"跑完一圈"角度判定逻辑。
  */
 
 #include "hal.h"
@@ -36,6 +36,13 @@ void hal_stub_set_key(hal_pin_t pin, bool pressed);
 void hal_stub_push_k230_text(const char *text);
 
 /**
+ * @brief 设置仿真 MPU6050 陀螺仪 Z 轴角速度，用于驱动偏航角积分。
+ *
+ * @param dps 角速度，单位 度/秒。
+ */
+void hal_stub_set_gyro_z_dps(float dps);
+
+/**
  * @brief 模拟一次按键短按。
  *
  * @param pin 要模拟的按键引脚。
@@ -58,53 +65,83 @@ static void press_key(hal_pin_t pin)
 }
 
 /**
- * @brief 仿真程序主入口。
+ * @brief 按给定黑线掩码持续推进若干毫秒。
  *
- * @return 0 表示模拟任务完成，1 表示状态机未按预期完成。
+ * @param duration_ms 推进时长，单位 ms。
+ * @param mask 巡线黑线掩码。
  */
-int main(void)
+static void tick_for(uint32_t duration_ms, uint8_t mask)
 {
-    static const uint8_t line_masks[] = {
-        0x06u, /* 中间两个探头压线 */
-        0x02u, /* 略偏左 */
-        0x04u, /* 略偏右 */
-        0x08u, /* 黑线在最右 */
-        0x01u, /* 黑线在最左 */
-        0x0Fu  /* A 点停车线 */
-    };
+    uint32_t elapsed;
 
-    hal_init();
-    robot_app_init();
-
-    puts("simulate: start line-following mode");
-    press_key(HAL_PIN_KEY_START);
-
-    for (unsigned step = 0; step < 1400u; ++step)
+    hal_stub_set_line_mask(mask);
+    for (elapsed = 0u; elapsed < duration_ms; elapsed += 5u)
     {
-        if (step < 1100u)
-        {
-            hal_stub_set_line_mask(line_masks[step % 5u]);
-        }
-        else
-        {
-            hal_stub_set_line_mask(line_masks[5]);
-        }
-
-        if ((step % 10u) == 0u)
-        {
-            hal_stub_push_k230_text("B:0.0\n");
-        }
-
         hal_delay_ms(5u);
         robot_app_tick(hal_millis());
     }
+}
 
-    const robot_telemetry_t tel = robot_app_get_telemetry();
-    printf("simulate: final mode=%d state=%d left=%d right=%d servo=%u\n",
+/**
+ * @brief 仿真程序主入口。
+ *
+ * @return 0 表示状态机按预期完成一圈并停车，1 表示未按预期完成。
+ */
+int main(void)
+{
+    robot_telemetry_t tel;
+
+    hal_init();
+    robot_app_init();
+    hal_stub_set_gyro_z_dps(0.0f);
+
+    /* 在正常压线状态（中间两探头，MASK=0x06）下按 START 起步。 */
+    hal_stub_set_line_mask(0x06u);
+    puts("simulate: start line-following mode");
+    press_key(HAL_PIN_KEY_START);
+
+    tel = robot_app_get_telemetry();
+    if (tel.state != ROBOT_STATE_RUNNING)
+    {
+        puts("FAIL: did not start");
+        return 1;
+    }
+
+    /*
+     * 用恒定 40 dps 角速度模拟绕场一圈：起步 700 ms 内偏航仍远低于防
+     * 原地打转门槛（35°），约 8.75 s 后偏航角越过
+     * ROBOT_LINE_FINISH_YAW_DEG（350°）。
+     */
+    hal_stub_set_gyro_z_dps(40.0f);
+
+    /* 转到约一半（角度约 200°）时，纯角度判定绝不能提前停车。 */
+    tick_for(5000u, 0x06u);
+    tel = robot_app_get_telemetry();
+    if (tel.state != ROBOT_STATE_RUNNING)
+    {
+        puts("FAIL: stopped before completing the lap");
+        return 2;
+    }
+
+    /* 继续转过 350°（无需任何视觉停车线标记），应自动停车。 */
+    tick_for(4500u, 0x06u);
+
+    tel = robot_app_get_telemetry();
+    printf("simulate: final mode=%d state=%d yaw=%.1f left=%d right=%d servo=%u\n",
            (int)tel.mode,
            (int)tel.state,
+           (double)tel.yaw_deg,
            tel.left_pwm,
            tel.right_pwm,
            tel.servo_us);
-    return tel.state == ROBOT_STATE_FINISHED ? 0 : 1;
+
+    if (tel.state != ROBOT_STATE_FINISHED ||
+        tel.left_pwm != 0 ||
+        tel.right_pwm != 0)
+    {
+        puts("FAIL: lap did not finish safely");
+        return 3;
+    }
+
+    return 0;
 }

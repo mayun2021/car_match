@@ -15,3 +15,10 @@ Track command range: +80 to +360 permille (no wheel reversal)
 Artifacts:
   Objects\CarMatch_MSPM0G3507.axf
   Objects\CarMatch_MSPM0G3507.hex
+
+*** STALE NOTICE ***
+Lap-finish detection changed after this build: the car now stops on
+pure MPU6050 yaw angle (0 -> ROBOT_LINE_FINISH_YAW_DEG, default 350
+deg) instead of the four-sensor all-black stop-line marker. The
+Objects/*.axf/*.hex here and ../firmware/CarMatch_MSPM0G3507*.axf/hex
+were built BEFORE this change -- rebuild (F7) in Keil5 before flashing.

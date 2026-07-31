@@ -63,8 +63,15 @@
 #define ROBOT_START_SPIN_GUARD_MS      700u
 #define ROBOT_START_SPIN_MAX_DEG       35.0f
 
-/* 车辆起步后忽略停车线的时间，避免刚从 A 点启动就误判完成。 */
+/* 车辆起步后忽略跑完一圈判定的时间，避免刚起步的姿态噪声误判完成。 */
 #define ROBOT_START_LINE_IGNORE_MS     1500u
+
+/*
+ * 跑完一圈的判定：MPU6050 从起步时清零偏航角，纯靠角度积分判断，不再
+ * 依赖停车线视觉标记（原来的四探头全黑判定）。起始角度为 0，转过本角度
+ * 即视为跑完一圈，直接停车。
+ */
+#define ROBOT_LINE_FINISH_YAW_DEG      350.0f
 
 /* 一圈任务最大运行时间保护。 */
 #define ROBOT_LINE_TASK_TIMEOUT_MS     30000u
