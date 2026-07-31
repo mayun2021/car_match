@@ -1,0 +1,43 @@
+Build date: 2026-07-31 17:26:31 +08:00
+Project: CarMatch_MSPM0G3507.uvprojx
+Target: CarMatch_MSPM0G3507
+Variant: 2026 H题第1至3问 / Q2一圈计时停车 / Q3 K230滚球
+Device: MSPM0G3507SPTR
+IDE: Keil uVision V5.24.2
+Compiler: Keil ArmClang V6.7
+Build mode: full rebuild (-r)
+Result: 0 Error(s), 0 Warning(s)
+Program Size: Code=16404 RO-data=1508 RW-data=4 ZI-data=5876
+Build Time Elapsed: 00:00:02
+
+Hardware contract:
+  Line X1/X2/X3/X4: PB2/PB3/PB4/PB5, black=low
+  TB6612 PWMA/PWMB: PA8/PA9
+  TB6612 AIN1/AIN2/BIN1/BIN2/STBY:
+    PA24/PA28/PA22/PA14/PA25
+  OLED + MPU6050 I2C: PA15/PA16
+  K2/K3/K1: PA27/PA30/PA17
+  TI UART to K230: PA10 TX, PA11 RX, 115200
+  K230 UART: IO45 RX, IO44 TX
+  MG996R signal: K230 IO42/PWM0 only
+  TI PA7: not initialized, reset/high-impedance, must remain unconnected
+
+Q2 final parameters:
+  Base/straight/final-approach: 220/245/205
+  KP/KI/KD: 0.24/0/0
+  Correction limit: 140
+  Finish gates: >=8.0 s, |net yaw|>=300 deg, marker confirm 30 ms
+  Active brake: 120 ms
+  Task timeout: 19.8 s
+  OLED full-frame updates suspended while Q2 motors are running
+
+Q3 safety:
+  TI sends KEEP every 100 ms
+  K230 returns servo toward neutral if KEEP is absent for 450 ms
+  K230 CALIBRATION_CONFIRMED remains False in the delivered template
+
+Artifacts:
+  Objects\CarMatch_MSPM0G3507.axf
+  Objects\CarMatch_MSPM0G3507.hex
+  ..\firmware\CarMatch_MSPM0G3507_Q1_Q3_20260731.axf
+  ..\firmware\CarMatch_MSPM0G3507_Q1_Q3_20260731.hex

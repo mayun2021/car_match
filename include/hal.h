@@ -35,8 +35,8 @@ typedef enum
     HAL_PIN_MOTOR_STBY,       /* PA25 */
 
     HAL_PIN_KEY_MODE,         /* PA27 */
-    HAL_PIN_KEY_START,        /* PA17 */
-    HAL_PIN_KEY_CALIB,        /* PA30 */
+    HAL_PIN_KEY_START,        /* PA30, Tianmengxing K3/start-stop */
+    HAL_PIN_KEY_CALIB,        /* PA17 */
 
     HAL_PIN_COUNT
 } hal_pin_t;
@@ -130,6 +130,14 @@ bool hal_i2c_write_read(uint8_t addr, const uint8_t *tx, size_t tx_len, uint8_t 
  * @return 0..255 表示读到的字节；-1 表示当前没有新数据。
  */
 int hal_uart_k230_read_byte(void);
+
+/**
+ * @brief 向 K230 发送一个以 '\0' 结尾的 ASCII 命令。
+ *
+ * @param text 文本命令。函数使用 UART0 阻塞发送，命令仅十余字节，
+ *             不会占用循迹控制周期中的常态路径。
+ */
+void hal_uart_k230_write(const char *text);
 
 /**
  * @brief 输出调试字符串。

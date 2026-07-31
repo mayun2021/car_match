@@ -10,6 +10,7 @@
 #include "robot_config.h"
 
 static float s_last_error;
+static uint8_t s_black_history[4];
 
 /**
  * @brief 初始化循迹模块内部状态。
@@ -17,6 +18,10 @@ static float s_last_error;
 void line_sensor_init(void)
 {
     s_last_error = 0.0f;
+    for (uint8_t i = 0u; i < 4u; ++i)
+    {
+        s_black_history[i] = 0u;
+    }
 }
 
 /**
@@ -39,7 +44,21 @@ line_sample_t line_sensor_read(void)
     for (uint8_t i = 0; i < 4; ++i)
     {
         const bool level = hal_gpio_read(pins[i]);
-        sample.black[i] = (level ? 1u : 0u) == ROBOT_LINE_BLACK_LEVEL;
+        const bool raw_black = (level ? 1u : 0u) == ROBOT_LINE_BLACK_LEVEL;
+        uint8_t history;
+        uint8_t black_votes;
+
+        /*
+         * 三次采样多数表决，抑制模块临界高度、电位器阈值和电机干扰
+         * 引起的单周期跳变。5 ms 控制周期下只增加约 10 ms 延迟。
+         */
+        s_black_history[i] =
+            (uint8_t)(((s_black_history[i] << 1) | (raw_black ? 1u : 0u)) & 0x07u);
+        history = s_black_history[i];
+        black_votes = (uint8_t)((history & 0x01u) +
+                                ((history >> 1) & 0x01u) +
+                                ((history >> 2) & 0x01u));
+        sample.black[i] = black_votes >= 2u;
 
         if (sample.black[i])
         {

@@ -22,7 +22,7 @@
 
 #include <stdint.h>
 
-/* 控制主循环周期。5 ms 对巡线和舵机控制都比较够用。 */
+/* 控制主循环周期。5 ms 对四路数字循迹足够，并给停车线消抖留出余量。 */
 #define ROBOT_CONTROL_PERIOD_MS        5u
 
 /* 四路红外模块检测到黑线时的电平。多数循迹模块黑线输出低电平。 */
@@ -34,53 +34,88 @@
 
 /* 电机输出范围为 -1000 到 +1000。 */
 #define ROBOT_MOTOR_PWM_MAX            1000
-#define ROBOT_MOTOR_RAMP_STEP          30
+#define ROBOT_MOTOR_RAMP_STEP          10
 
 /* 如果左右轮方向与预期相反，分别切换下面两个宏。 */
 #define ROBOT_LEFT_MOTOR_REVERSE       0
 #define ROBOT_RIGHT_MOTOR_REVERSE      0
 
-/* 模式一/三巡线参数。先保守，跑稳后再提速。 */
-#define ROBOT_LINE_BASE_SPEED          320
-#define ROBOT_LINE_SEARCH_SPEED        220
-#define ROBOT_LINE_KP                  0.62f
+/*
+ * 第 2 问循线参数。
+ *
+ * 保留已经在实车上跑通的 220 / KP=0.24 / 最大修正 140。新高框架
+ * 只在 MPU6050 判断为直线且探头居中时升到 245，弯道自动回到原速度。
+ * 这样可缩短 1.5 m 直线段时间，同时不提高弯道侧倾风险。
+ */
+#define ROBOT_LINE_BASE_SPEED          220
+#define ROBOT_LINE_STRAIGHT_SPEED      245
+#define ROBOT_LINE_SEARCH_FAST_SPEED   180
+#define ROBOT_LINE_SEARCH_SLOW_SPEED    80
+#define ROBOT_LINE_KP                  0.24f
 #define ROBOT_LINE_KI                  0.00f
-#define ROBOT_LINE_KD                  0.18f
-#define ROBOT_LINE_CORRECTION_LIMIT    450.0f
+#define ROBOT_LINE_KD                  0.00f
+#define ROBOT_LINE_CORRECTION_LIMIT    140.0f
 
-/* 车辆起步后忽略停车线的时间，避免刚从 A 点启动就误判完成。 */
-#define ROBOT_START_LINE_IGNORE_MS     1500u
+/* 启动时必须已经压住黑线；运行中丢线只允许短时缓弯，随后安全停车。 */
+#define ROBOT_LINE_START_MAX_ERROR     400.0f
+#define ROBOT_LINE_LOST_STOP_MS        350u
 
-/* 一圈任务最大运行时间保护。 */
-#define ROBOT_LINE_TASK_TIMEOUT_MS     30000u
+/* 只有同时满足居中和低偏航角速度时，才使用直线加速值。 */
+#define ROBOT_LINE_STRAIGHT_MAX_ERROR   80.0f
+#define ROBOT_LINE_STRAIGHT_MAX_DPS     12.0f
 
-/* MG996R 舵机参数。50 Hz PWM，常用有效脉宽约 500-2500 us。 */
-#define ROBOT_SERVO_CENTER_US          1500
-#define ROBOT_SERVO_MIN_US             700
-#define ROBOT_SERVO_MAX_US             2300
-#define ROBOT_SERVO_MAX_DELTA_US       420
+/* 启动后若短时间内偏航过大，判定方向/接线异常并立即停车。 */
+#define ROBOT_START_SPIN_GUARD_MS      700u
+#define ROBOT_START_SPIN_MAX_DEG       35.0f
 
 /*
- * 舵机方向。
- * 如果钢球偏右时控制后更偏右，说明方向反了，把该宏从 0 改为 1。
+ * 第 2 问：A 点起步/终点状态机。
+ *
+ * 题图标注 A 点为白色线，因此默认把全白 MASK=0 当作 A；若实物起点为宽黑线，
+ * 程序会在 K3 启动时自动记住 MASK=15，并以同样的宽黑线作为终点。
+ * 黑色横线默认要求四个探头全黑，避免弯道的三探头图样误触发。
  */
-#define ROBOT_BALL_SERVO_REVERSE       0
+#define ROBOT_Q2_MARKER_MIN_BLACK       4u
+#define ROBOT_Q2_DEFAULT_WHITE_MARKER   1u
+#define ROBOT_Q2_START_VOTE_SAMPLES     16u
+#define ROBOT_Q2_START_VOTE_MIN         12u
+#define ROBOT_Q2_LEAVE_SPEED            210
+#define ROBOT_Q2_LEAVE_CLEAR_MS          90u
+#define ROBOT_Q2_LEAVE_TIMEOUT_MS      1200u
+#define ROBOT_Q2_FINISH_MIN_MS         8000u
+#define ROBOT_Q2_MIN_LAP_YAW_DEG        300.0f
+#define ROBOT_Q2_FINISH_APPROACH_SPEED   205
+#define ROBOT_Q2_MARKER_CONFIRM_MS       30u
+#define ROBOT_Q2_ACTIVE_BRAKE_MS         120u
+#define ROBOT_Q2_TASK_TIMEOUT_MS       19800u
+#define ROBOT_Q2_WHITE_MARKER_MAX_DPS    18.0f
+#define ROBOT_Q2_WHITE_MARKER_ARM_MS     120u
 
-/* 模式二/三滚球位置闭环参数。单位输入为 mm。 */
-#define ROBOT_BALL_KP                  8.0f
-#define ROBOT_BALL_KI                  0.02f
-#define ROBOT_BALL_KD                  2.4f
-#define ROBOT_BALL_OUTPUT_LIMIT_US     380.0f
+/*
+ * 第 3 问由 K230 本地完成视觉 + 舵机闭环；MSPM0 只负责按键、OLED、
+ * 总计时和急停。舵机已经接在 K230 IO42，禁止同时从 PA7 再跑一套 PID。
+ */
+#define ROBOT_Q3_TARGET_POS_MM          50
+#define ROBOT_Q3_TARGET_NEG_MM         -50
+#define ROBOT_Q3_ACK_RETRY_MS           200u
+#define ROBOT_Q3_ACK_MAX_ATTEMPTS         3u
+#define ROBOT_Q3_KEEPALIVE_MS            100u
+#define ROBOT_Q3_START_MAX_ABS_MM        10.0f
+#define ROBOT_Q3_LINK_TIMEOUT_MS         250u
+#define ROBOT_Q3_TASK_TIMEOUT_MS        5000u
+#define ROBOT_Q3_LOCAL_WATCHDOG_MS       5200u
+#define ROBOT_Q3_HOLD_LINK_TIMEOUT_MS     500u
+#define ROBOT_Q3_HOLD_ERROR_LIMIT_MM       10.0f
+#define ROBOT_Q3_HOLD_ERROR_TIMEOUT_MS    500u
 
-/* 视觉超过该时间没有有效数据，判定为丢球。 */
-#define ROBOT_VISION_TIMEOUT_MS        200u
-
-/* 模式二演示任务：先到 +5 cm，再到 -5 cm。 */
-#define ROBOT_BALL_TARGET_POS_MM       50.0f
-#define ROBOT_BALL_TARGET_NEG_MM       -50.0f
-#define ROBOT_BALL_TARGET_TOLERANCE_MM 10.0f
-#define ROBOT_BALL_STABLE_MS           500u
-#define ROBOT_BALL_STAGE_TIMEOUT_MS    5000u
+/*
+ * 保留 PA7 舵机驱动的编译兼容值，但赛题状态机不再调用它。现物舵机信号
+ * 只接 K230 IO42；PA7 必须悬空，不能与 IO42 并接。
+ */
+#define ROBOT_SERVO_CENTER_US           1500
+#define ROBOT_SERVO_MIN_US              1300
+#define ROBOT_SERVO_MAX_US              1700
+#define ROBOT_SERVO_MAX_DELTA_US         200
 
 /* K230 串口默认波特率。 */
 #define ROBOT_K230_BAUDRATE            115200u

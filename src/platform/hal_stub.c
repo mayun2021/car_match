@@ -211,6 +211,17 @@ int hal_uart_k230_read_byte(void)
 }
 
 /**
+ * @brief 在桌面仿真中把发给 K230 的命令打印出来。
+ */
+void hal_uart_k230_write(const char *text)
+{
+    if (text != NULL)
+    {
+        fputs(text, stdout);
+    }
+}
+
+/**
  * @brief 输出仿真调试字符串到标准输出。
  *
  * @param text 待输出字符串。

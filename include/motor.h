@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 /**
- * @brief 初始化电机驱动状态并使能 TB6612。
+ * @brief 初始化电机驱动状态；保持 TB6612 待机，直到收到运行命令。
  */
 void motor_init(void);
 
@@ -28,6 +28,14 @@ void motor_set_raw(int16_t left, int16_t right);
  * @brief 停止左右电机输出。
  */
 void motor_stop(void);
+
+/**
+ * @brief TB6612 主动短刹车。
+ *
+ * 两路 H 桥保持使能并把同侧两个方向输入同时拉高，PWM 置 100%。
+ * 调用者必须只保持 ROBOT_Q2_ACTIVE_BRAKE_MS，随后调用 motor_stop()。
+ */
+void motor_brake(void);
 
 /**
  * @brief 获取当前左轮 PWM 命令。

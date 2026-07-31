@@ -1,256 +1,468 @@
 /**
  * @file hal_ti_mspm0.c
- * @brief MSPM0G3507/MSPM03507 真实硬件适配模板。
- *
- * 使用方式：
- * 1. 在 TI SysConfig 中建立 GPIO/PWM/I2C/UART 外设。
- * 2. 建议给信号使用下面注释中的名字，例如 GPIO_LINE_L2、PWM_MOTOR_LEFT。
- * 3. 根据 SysConfig 实际生成的宏，把每个 switch 分支里的 TODO 对接到 DriverLib。
- *
- * 注意：本文件是硬件工程模板，桌面仿真不会编译它。
+ * @brief MSPM0G3507 hardware abstraction for the Keil5 target.
  */
 
 #ifdef TARGET_MSPM0
 
 #include "hal.h"
-#include "robot_config.h"
 #include "ti_msp_dl_config.h"
 
-/**
- * @brief 初始化 MSPM0 外设。
- *
- * 真实工程中由 SysConfig 生成的 SYSCFG_DL_init() 完成 GPIO、PWM、I2C、UART
- * 和时钟初始化。
- */
-void hal_init(void)
-{
-    SYSCFG_DL_init();
+#define UART_RX_BUFFER_SIZE              128U
+#define UART_RX_BUFFER_MASK              (UART_RX_BUFFER_SIZE - 1U)
+/* 400 kHz software-I2C keeps the full-frame OLED update from stalling control. */
+#define I2C_HALF_PERIOD_CYCLES           (CPUCLK_FREQ / 800000U)
+#define I2C_CLOCK_STRETCH_TIMEOUT        1000U
 
-    /*
-     * SysConfig 建议：
-     * - 电机 PWM：20 kHz，初始占空比 0。
-     * - 舵机 PWM：50 Hz，初始脉宽 1500 us。
-     * - K230 UART：115200 8N1。
-     * - MPU6050 I2C：100 kHz 或 400 kHz。
-     */
+volatile uint32_t g_systick_ms;
+
+static volatile uint8_t s_uart_rx_buffer[UART_RX_BUFFER_SIZE];
+static volatile uint8_t s_uart_rx_head;
+static volatile uint8_t s_uart_rx_tail;
+
+static void i2c_delay(void)
+{
+    DL_Common_delayCycles(I2C_HALF_PERIOD_CYCLES);
 }
 
-/**
- * @brief 获取 MSPM0 系统毫秒计数。
- *
- * @return 由 SysTick 或 Timer 中断维护的毫秒计数。
- */
+static void i2c_release(uint32_t iomux, uint32_t pin)
+{
+    DL_GPIO_disableOutput(GPIO_MPU_I2C_PORT, pin);
+    DL_GPIO_initDigitalInputFeatures(
+        iomux,
+        DL_GPIO_INVERSION_DISABLE,
+        DL_GPIO_RESISTOR_PULL_UP,
+        DL_GPIO_HYSTERESIS_DISABLE,
+        DL_GPIO_WAKEUP_DISABLE);
+}
+
+static void i2c_drive_low(uint32_t iomux, uint32_t pin)
+{
+    DL_GPIO_clearPins(GPIO_MPU_I2C_PORT, pin);
+    DL_GPIO_initDigitalOutput(iomux);
+    DL_GPIO_enableOutput(GPIO_MPU_I2C_PORT, pin);
+}
+
+static void i2c_sda_release(void)
+{
+    i2c_release(GPIO_MPU_I2C_SDA_IOMUX, GPIO_MPU_I2C_SDA_PIN);
+}
+
+static void i2c_sda_low(void)
+{
+    i2c_drive_low(GPIO_MPU_I2C_SDA_IOMUX, GPIO_MPU_I2C_SDA_PIN);
+}
+
+static void i2c_scl_low(void)
+{
+    i2c_drive_low(GPIO_MPU_I2C_SCL_IOMUX, GPIO_MPU_I2C_SCL_PIN);
+}
+
+static bool i2c_scl_release_and_wait(void)
+{
+    uint32_t timeout = I2C_CLOCK_STRETCH_TIMEOUT;
+
+    i2c_release(GPIO_MPU_I2C_SCL_IOMUX, GPIO_MPU_I2C_SCL_PIN);
+    while ((DL_GPIO_readPins(GPIO_MPU_I2C_PORT, GPIO_MPU_I2C_SCL_PIN) &
+            GPIO_MPU_I2C_SCL_PIN) == 0U)
+    {
+        if (--timeout == 0U)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool i2c_sda_is_high(void)
+{
+    return (DL_GPIO_readPins(GPIO_MPU_I2C_PORT, GPIO_MPU_I2C_SDA_PIN) &
+            GPIO_MPU_I2C_SDA_PIN) != 0U;
+}
+
+static bool i2c_start(void)
+{
+    i2c_sda_release();
+    if (!i2c_scl_release_and_wait())
+    {
+        return false;
+    }
+    i2c_delay();
+
+    if (!i2c_sda_is_high())
+    {
+        return false;
+    }
+
+    i2c_sda_low();
+    i2c_delay();
+    i2c_scl_low();
+    i2c_delay();
+    return true;
+}
+
+static void i2c_stop(void)
+{
+    i2c_sda_low();
+    i2c_delay();
+    (void)i2c_scl_release_and_wait();
+    i2c_delay();
+    i2c_sda_release();
+    i2c_delay();
+}
+
+static bool i2c_write_byte(uint8_t value)
+{
+    uint8_t bit;
+    bool ack;
+
+    for (bit = 0U; bit < 8U; ++bit)
+    {
+        if ((value & 0x80U) != 0U)
+        {
+            i2c_sda_release();
+        }
+        else
+        {
+            i2c_sda_low();
+        }
+        i2c_delay();
+        if (!i2c_scl_release_and_wait())
+        {
+            return false;
+        }
+        i2c_delay();
+        i2c_scl_low();
+        value <<= 1;
+    }
+
+    i2c_sda_release();
+    i2c_delay();
+    if (!i2c_scl_release_and_wait())
+    {
+        return false;
+    }
+    i2c_delay();
+    ack = !i2c_sda_is_high();
+    i2c_scl_low();
+    i2c_delay();
+    return ack;
+}
+
+static bool i2c_read_byte(uint8_t *value, bool ack)
+{
+    uint8_t bit;
+    uint8_t data = 0U;
+
+    i2c_sda_release();
+    for (bit = 0U; bit < 8U; ++bit)
+    {
+        data <<= 1;
+        if (!i2c_scl_release_and_wait())
+        {
+            return false;
+        }
+        i2c_delay();
+        if (i2c_sda_is_high())
+        {
+            data |= 1U;
+        }
+        i2c_scl_low();
+        i2c_delay();
+    }
+
+    if (ack)
+    {
+        i2c_sda_low();
+    }
+    else
+    {
+        i2c_sda_release();
+    }
+    i2c_delay();
+    if (!i2c_scl_release_and_wait())
+    {
+        return false;
+    }
+    i2c_delay();
+    i2c_scl_low();
+    i2c_sda_release();
+    i2c_delay();
+
+    *value = data;
+    return true;
+}
+
+void SysTick_Handler(void)
+{
+    ++g_systick_ms;
+}
+
+void UART_K230_INST_IRQHandler(void)
+{
+    uint8_t next;
+    uint8_t value;
+
+    if (DL_UART_Main_getPendingInterrupt(UART_K230_INST) ==
+        DL_UART_MAIN_IIDX_RX)
+    {
+        while (!DL_UART_Main_isRXFIFOEmpty(UART_K230_INST))
+        {
+            value = DL_UART_Main_receiveData(UART_K230_INST);
+            next = (uint8_t)((s_uart_rx_head + 1U) & UART_RX_BUFFER_MASK);
+            if (next != s_uart_rx_tail)
+            {
+                s_uart_rx_buffer[s_uart_rx_head] = value;
+                s_uart_rx_head = next;
+            }
+        }
+    }
+}
+
+void hal_init(void)
+{
+    s_uart_rx_head = 0U;
+    s_uart_rx_tail = 0U;
+    g_systick_ms = 0U;
+
+    SYSCFG_DL_init();
+
+    DL_TimerA_startCounter(Motor_INST);
+
+    NVIC_ClearPendingIRQ(UART_K230_INST_INT_IRQN);
+    NVIC_EnableIRQ(UART_K230_INST_INT_IRQN);
+
+    (void)SysTick_Config(CPUCLK_FREQ / 1000U);
+    NVIC_SetPriority(SysTick_IRQn, 3U);
+}
+
 uint32_t hal_millis(void)
 {
-    /*
-     * 推荐使用 1 ms SysTick 或 Timer 中断维护毫秒计数。
-     * 例如：
-     * extern volatile uint32_t g_systick_ms;
-     * return g_systick_ms;
-     */
-    extern volatile uint32_t g_systick_ms;
     return g_systick_ms;
 }
 
-/**
- * @brief 阻塞延时指定毫秒数。
- *
- * @param ms 延时时间，单位 ms。
- */
 void hal_delay_ms(uint32_t ms)
 {
     const uint32_t start = hal_millis();
-    while (hal_millis() - start < ms)
+    while ((hal_millis() - start) < ms)
     {
     }
 }
 
-/**
- * @brief 设置 MSPM0 GPIO 输出电平。
- *
- * @param pin 抽象引脚编号。
- * @param high true 输出高电平，false 输出低电平。
- */
 void hal_gpio_write(hal_pin_t pin, bool high)
 {
-    /*
-     * 下面以 TI DriverLib 常用写法为例：
-     * high:  DL_GPIO_setPins(PORT, PIN);
-     * low:   DL_GPIO_clearPins(PORT, PIN);
-     */
+    uint32_t mask = 0U;
+
     switch (pin)
     {
     case HAL_PIN_MOTOR_AIN1:
-        /* TODO: PA24 */
+        mask = GPIO_MOTOR_AIN1_PIN;
         break;
     case HAL_PIN_MOTOR_AIN2:
-        /* TODO: PA28 */
+        mask = GPIO_MOTOR_AIN2_PIN;
         break;
     case HAL_PIN_MOTOR_BIN1:
-        /* TODO: PA22 */
+        mask = GPIO_MOTOR_BIN1_PIN;
         break;
     case HAL_PIN_MOTOR_BIN2:
-        /* TODO: PA14 */
+        mask = GPIO_MOTOR_BIN2_PIN;
         break;
     case HAL_PIN_MOTOR_STBY:
-        /* TODO: PA25 */
+        mask = GPIO_MOTOR_STBY_PIN;
         break;
     default:
-        (void)high;
-        break;
+        return;
+    }
+
+    if (high)
+    {
+        DL_GPIO_setPins(GPIO_MOTOR_PORT, mask);
+    }
+    else
+    {
+        DL_GPIO_clearPins(GPIO_MOTOR_PORT, mask);
     }
 }
 
-/**
- * @brief 读取 MSPM0 GPIO 输入电平。
- *
- * @param pin 抽象引脚编号。
- * @return true 表示高电平，false 表示低电平。
- */
 bool hal_gpio_read(hal_pin_t pin)
 {
+    GPIO_Regs *port;
+    uint32_t mask;
+
     switch (pin)
     {
     case HAL_PIN_LINE_L2:
-        /* TODO: return DL_GPIO_readPins(GPIOB, DL_GPIO_PIN_2) != 0; */
+        port = GPIO_LINE_PORT;
+        mask = GPIO_LINE_L2_PIN;
         break;
     case HAL_PIN_LINE_L1:
-        /* TODO: PB3 */
+        port = GPIO_LINE_PORT;
+        mask = GPIO_LINE_L1_PIN;
         break;
     case HAL_PIN_LINE_R1:
-        /* TODO: PB4 */
+        port = GPIO_LINE_PORT;
+        mask = GPIO_LINE_R1_PIN;
         break;
     case HAL_PIN_LINE_R2:
-        /* TODO: PB5 */
+        port = GPIO_LINE_PORT;
+        mask = GPIO_LINE_R2_PIN;
         break;
     case HAL_PIN_KEY_MODE:
-        /* TODO: PA27 */
+        port = GPIO_KEY_PORT;
+        mask = GPIO_KEY_MODE_PIN;
         break;
     case HAL_PIN_KEY_START:
-        /* TODO: PA17 */
+        port = GPIO_KEY_PORT;
+        mask = GPIO_KEY_START_PIN;
         break;
     case HAL_PIN_KEY_CALIB:
-        /* TODO: PA30 */
+        port = GPIO_KEY_PORT;
+        mask = GPIO_KEY_CALIB_PIN;
         break;
     default:
-        break;
+        return false;
     }
 
-    return false;
+    return (DL_GPIO_readPins(port, mask) & mask) != 0U;
 }
 
-/**
- * @brief 设置电机 PWM 占空比。
- *
- * @param pwm PWM 通道。
- * @param permille 占空比千分比，0 到 1000。
- */
 void hal_pwm_set_duty_permille(hal_pwm_t pwm, uint16_t permille)
 {
-    if (permille > 1000u)
+    uint32_t compare;
+
+    if (permille > 1000U)
     {
-        permille = 1000u;
+        permille = 1000U;
     }
 
-    switch (pwm)
+    compare = MOTOR_PWM_PERIOD_COUNTS -
+        (((uint32_t)MOTOR_PWM_PERIOD_COUNTS * permille + 500U) / 1000U);
+
+    if (pwm == HAL_PWM_MOTOR_LEFT)
     {
-    case HAL_PWM_MOTOR_LEFT:
-        /* TODO: PA8/PWMA，占空比 permille/1000 */
-        break;
-    case HAL_PWM_MOTOR_RIGHT:
-        /* TODO: PA9/PWMB，占空比 permille/1000 */
-        break;
-    default:
-        break;
+        DL_TimerA_setCaptureCompareValue(
+            Motor_INST, compare, GPIO_Motor_C0_IDX);
+    }
+    else if (pwm == HAL_PWM_MOTOR_RIGHT)
+    {
+        DL_TimerA_setCaptureCompareValue(
+            Motor_INST, compare, GPIO_Motor_C1_IDX);
     }
 }
 
-/**
- * @brief 设置舵机 PWM 脉宽。
- *
- * @param pwm PWM 通道。
- * @param pulse_us 舵机高电平脉宽，单位 us。
- */
 void hal_pwm_set_servo_us(hal_pwm_t pwm, uint16_t pulse_us)
 {
-    if (pwm == HAL_PWM_SERVO)
+    /*
+     * 第3问的 MG996R 只由 K230 IO42/PWM0 控制。TI PA7 必须保持悬空，
+     * 因此本兼容接口故意不产生任何波形。
+     */
+    (void)pwm;
+    (void)pulse_us;
+}
+
+bool hal_i2c_write(uint8_t addr, const uint8_t *data, size_t len)
+{
+    size_t index;
+    bool ok;
+
+    if ((data == NULL && len != 0U) || addr > 0x7FU)
     {
-        /*
-         * TODO: PA7/MG996R。
-         * 50 Hz 周期为 20000 us，把 pulse_us 转成定时器比较值。
-         */
-        (void)pulse_us;
+        return false;
+    }
+
+    ok = i2c_start();
+    if (ok)
+    {
+        ok = i2c_write_byte((uint8_t)(addr << 1));
+    }
+    for (index = 0U; ok && index < len; ++index)
+    {
+        ok = i2c_write_byte(data[index]);
+    }
+    i2c_stop();
+    return ok;
+}
+
+bool hal_i2c_write_read(uint8_t addr,
+                        const uint8_t *tx,
+                        size_t tx_len,
+                        uint8_t *rx,
+                        size_t rx_len)
+{
+    size_t index;
+    bool ok;
+
+    if ((tx == NULL && tx_len != 0U) ||
+        (rx == NULL && rx_len != 0U) ||
+        addr > 0x7FU)
+    {
+        return false;
+    }
+
+    ok = i2c_start();
+    if (ok && tx_len != 0U)
+    {
+        ok = i2c_write_byte((uint8_t)(addr << 1));
+        for (index = 0U; ok && index < tx_len; ++index)
+        {
+            ok = i2c_write_byte(tx[index]);
+        }
+    }
+
+    if (ok && rx_len != 0U)
+    {
+        ok = i2c_start();
+        if (ok)
+        {
+            ok = i2c_write_byte((uint8_t)((addr << 1) | 1U));
+        }
+        for (index = 0U; ok && index < rx_len; ++index)
+        {
+            ok = i2c_read_byte(
+                &rx[index], (index + 1U) < rx_len);
+        }
+    }
+
+    i2c_stop();
+    return ok;
+}
+
+int hal_uart_k230_read_byte(void)
+{
+    uint8_t value;
+
+    if (s_uart_rx_tail == s_uart_rx_head)
+    {
+        return -1;
+    }
+
+    value = s_uart_rx_buffer[s_uart_rx_tail];
+    s_uart_rx_tail =
+        (uint8_t)((s_uart_rx_tail + 1U) & UART_RX_BUFFER_MASK);
+    return (int)value;
+}
+
+void hal_uart_k230_write(const char *text)
+{
+    if (text == NULL)
+    {
+        return;
+    }
+
+    while (*text != '\0')
+    {
+        DL_UART_Main_transmitDataBlocking(
+            UART_K230_INST, (uint8_t)*text);
+        ++text;
     }
 }
 
-/**
- * @brief 通过 MSPM0 I2C 写入数据。
- *
- * @param addr 7 位 I2C 从机地址。
- * @param data 待写数据。
- * @param len 待写长度。
- * @return true 表示写入成功。
- */
-bool hal_i2c_write(uint8_t addr, const uint8_t *data, size_t len)
-{
-    /*
-     * TODO: 使用 SysConfig 生成的 I2C 控制器向 addr 写 len 字节。
-     * MSPM0 SDK 示例中通常使用 DL_I2C_fillControllerTXFIFO 等函数。
-     */
-    (void)addr;
-    (void)data;
-    (void)len;
-    return false;
-}
-
-/**
- * @brief 通过 MSPM0 I2C 先写寄存器地址再读取数据。
- *
- * @param addr 7 位 I2C 从机地址。
- * @param tx 写入缓冲区。
- * @param tx_len 写入长度。
- * @param rx 读取缓冲区。
- * @param rx_len 读取长度。
- * @return true 表示通信成功。
- */
-bool hal_i2c_write_read(uint8_t addr, const uint8_t *tx, size_t tx_len, uint8_t *rx, size_t rx_len)
-{
-    /*
-     * TODO: 典型寄存器读取流程：
-     * 1. 写寄存器地址 tx[0]，不释放总线或随后重新起始。
-     * 2. 从同一从机读取 rx_len 字节到 rx。
-     */
-    (void)addr;
-    (void)tx;
-    (void)tx_len;
-    (void)rx;
-    (void)rx_len;
-    return false;
-}
-
-/**
- * @brief 非阻塞读取 K230 串口字节。
- *
- * @return 0..255 表示读到的字节，-1 表示当前没有数据。
- */
-int hal_uart_k230_read_byte(void)
-{
-    /*
-     * TODO: 非阻塞读取 K230 UART。
-     * 没有数据返回 -1，有数据返回 0..255。
-     */
-    return -1;
-}
-
-/**
- * @brief 输出调试字符串。
- *
- * @param text 待输出字符串。
- */
 void hal_uart_debug_write(const char *text)
 {
     /*
-     * TODO: 可输出到调试串口/OLED，也可以留空。
+     * PA10/PA11 are dedicated to K230. Keep diagnostics silent so telemetry
+     * text cannot interfere with the vision link. Add a second UART here if
+     * the board exposes spare debug pins.
      */
     (void)text;
 }

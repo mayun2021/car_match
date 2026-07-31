@@ -1,9 +1,9 @@
 /**
  * @file k230_protocol.h
- * @brief K230 视觉模块串口协议解析接口。
+ * @brief MSPM0 与 K230 的第 3 问任务协议。
  *
- * K230 负责识别凹槽/水管内钢球位置，并通过串口把 x_mm 发送给 MSPM0。
- * 本模块把 ASCII 文本帧解析成可供滚球 PID 使用的位置数据。
+ * MSPM0 负责按键、总计时、OLED 和安全监督；K230 在本地完成视觉与舵机闭环。
+ * 帧均为一行 ASCII，以 '\n' 结尾，便于现场串口抓包。
  */
 
 #ifndef K230_PROTOCOL_H
@@ -12,33 +12,54 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+typedef enum
+{
+    K230_TASK_IDLE = 0,
+    K230_TASK_TO_POS = 1,
+    K230_TASK_TO_NEG = 2,
+    K230_TASK_HOLD_NEG = 3,
+    K230_TASK_DONE = 4,
+    K230_TASK_FAULT = 5
+} k230_task_state_t;
+
+typedef enum
+{
+    K230_ACK_NONE = 0,
+    K230_ACK_START,
+    K230_ACK_ABORT,
+    K230_ACK_NEUTRAL
+} k230_ack_t;
+
 typedef struct
 {
-    bool valid;
+    bool link_alive;
+    bool vision_valid;
+    bool done;
+    bool fault;
+    uint16_t seq;
+    uint16_t ack_seq;
+    uint16_t servo_us;
+    uint8_t task_state;
+    uint8_t fault_code;
+    k230_ack_t ack;
     float x_mm;
-    float y_px;
+    float target_mm;
+    float error_mm;
+    uint32_t elapsed_ms;
     uint32_t last_update_ms;
     uint32_t frames;
     uint32_t parse_errors;
-} k230_vision_t;
+} k230_status_t;
 
-/**
- * @brief 初始化 K230 协议解析状态。
- */
 void k230_protocol_init(void);
-
-/**
- * @brief 从串口取出所有已收到字节并解析完整帧。
- *
- * @param now_ms 当前系统时间，单位 ms，用于判断视觉数据是否超时。
- */
 void k230_protocol_poll(uint32_t now_ms);
+k230_status_t k230_protocol_get(void);
 
-/**
- * @brief 获取最近一次视觉识别结果。
- *
- * @return 最近的钢球位置、有效标志、更新时间和统计信息。
- */
-k230_vision_t k230_protocol_get(void);
+void k230_protocol_send_q3_start(uint16_t seq,
+                                 int16_t target_pos_mm,
+                                 int16_t target_neg_mm);
+void k230_protocol_send_q3_abort(uint16_t seq);
+void k230_protocol_send_q3_neutral(uint16_t seq);
+void k230_protocol_send_q3_keepalive(uint16_t seq);
 
 #endif

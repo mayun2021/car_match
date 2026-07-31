@@ -104,7 +104,6 @@ void motor_init(void)
 {
     s_left_pwm = 0;
     s_right_pwm = 0;
-    hal_gpio_write(HAL_PIN_MOTOR_STBY, true);
     motor_stop();
 }
 
@@ -148,6 +147,32 @@ void motor_stop(void)
     hal_gpio_write(HAL_PIN_MOTOR_AIN2, false);
     hal_gpio_write(HAL_PIN_MOTOR_BIN1, false);
     hal_gpio_write(HAL_PIN_MOTOR_BIN2, false);
+    /* Disable the H-bridge whenever the robot is stopped or waiting. */
+    hal_gpio_write(HAL_PIN_MOTOR_STBY, false);
+}
+
+/**
+ * @brief 对两只电机执行 TB6612 短刹车。
+ *
+ * 先撤掉 PWM，再建立 IN1=IN2 的短刹车组合，最后恢复 100% PWM，
+ * 避免方向脚切换瞬间产生不确定的窄脉冲。
+ */
+void motor_brake(void)
+{
+    s_left_pwm = 0;
+    s_right_pwm = 0;
+
+    hal_pwm_set_duty_permille(HAL_PWM_MOTOR_LEFT, 0u);
+    hal_pwm_set_duty_permille(HAL_PWM_MOTOR_RIGHT, 0u);
+
+    hal_gpio_write(HAL_PIN_MOTOR_AIN1, true);
+    hal_gpio_write(HAL_PIN_MOTOR_AIN2, true);
+    hal_gpio_write(HAL_PIN_MOTOR_BIN1, true);
+    hal_gpio_write(HAL_PIN_MOTOR_BIN2, true);
+    hal_gpio_write(HAL_PIN_MOTOR_STBY, true);
+
+    hal_pwm_set_duty_permille(HAL_PWM_MOTOR_LEFT, 1000u);
+    hal_pwm_set_duty_permille(HAL_PWM_MOTOR_RIGHT, 1000u);
 }
 
 /**
