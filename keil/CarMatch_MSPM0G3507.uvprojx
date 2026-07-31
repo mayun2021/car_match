@@ -521,6 +521,16 @@
               <FileType>5</FileType>
               <FilePath>..\include\oled.h</FilePath>
             </File>
+            <File>
+              <FileName>display.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\include\display.h</FilePath>
+            </File>
+            <File>
+              <FileName>pid.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\include\pid.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

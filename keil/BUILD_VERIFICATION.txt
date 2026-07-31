@@ -26,10 +26,19 @@ Q2 final parameters:
   Base/straight/final-approach: 220/245/205
   KP/KI/KD: 0.24/0/0
   Correction limit: 140
-  Finish gates: >=8.0 s, |net yaw|>=300 deg, marker confirm 30 ms
+  Finish gate: >=8.0 s AND |net yaw|>=350 deg (pure yaw, no A-point
+    marker re-check; deceleration zone still starts at 300 deg)
   Active brake: 120 ms
   Task timeout: 19.8 s
   OLED full-frame updates suspended while Q2 motors are running
+
+*** STALE NOTICE (post 2026-07-31 17:26 build) ***
+Source now finishes the lap on yaw angle alone (350 deg) instead of
+yaw + A-point marker re-detection; the marker-confirm state and its
+config constants were removed. The Objects/*.axf/*.hex and
+../firmware/CarMatch_MSPM0G3507_Q1_Q3_20260731.* below were built
+BEFORE this change and do not reflect current source -- rebuild
+(F7) in Keil5 before flashing.
 
 Q3 safety:
   TI sends KEEP every 100 ms
