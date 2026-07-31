@@ -427,29 +427,47 @@ void robot_app_init(void)
  */
 void robot_app_tick(uint32_t now_ms)
 {
-    uint32_t dt_ms = now_ms - s_last_tick_ms;
+    uint32_t real_dt_ms = now_ms - s_last_tick_ms;
+    uint32_t control_dt_ms;
+    uint32_t gyro_dt_ms;
     float dt_s;
     line_sample_t line;
     mpu6050_state_t imu;
 
-    if (dt_ms < ROBOT_CONTROL_PERIOD_MS)
+    if (real_dt_ms < ROBOT_CONTROL_PERIOD_MS)
     {
         return;
     }
-    if (dt_ms > 50u)
+
+    /*
+     * OLED 每 250 ms 整屏刷新一次，走的是软件位带 I2C，单次刷新可能阻塞
+     * 数十毫秒。控制环（PID）的 dt 需要限幅，避免卡顿后吃到一个大 dt
+     * 导致输出突变；但偏航角积分绝不能用同一个被限幅的 dt，否则每次
+     * OLED 刷新阻塞的这段真实转过的角度就被丢掉，偏航角会系统性地比
+     * 实际转速慢，导致"转一圈"要转一圈半才达到判定角度。这里把两者
+     * 分开：控制环用限幅后的 dt，陀螺仪积分用真实 dt（只挡真正卡死的
+     * 极端情况）。
+     */
+    control_dt_ms = real_dt_ms;
+    if (control_dt_ms > 50u)
     {
-        dt_ms = ROBOT_CONTROL_PERIOD_MS;
+        control_dt_ms = ROBOT_CONTROL_PERIOD_MS;
+    }
+    gyro_dt_ms = real_dt_ms;
+    if (gyro_dt_ms > ROBOT_GYRO_MAX_DT_MS)
+    {
+        gyro_dt_ms = ROBOT_GYRO_MAX_DT_MS;
     }
 
     s_last_tick_ms = now_ms;
-    dt_s = (float)dt_ms / 1000.0f;
+    dt_s = (float)control_dt_ms / 1000.0f;
     s_tel.now_ms = now_ms;
 
     poll_buttons(now_ms);
     handle_button_events(now_ms);
 
     k230_protocol_poll(now_ms);
-    (void)mpu6050_update(dt_ms);
+    (void)mpu6050_update(gyro_dt_ms);
     imu = mpu6050_get_state();
     s_tel.yaw_deg = imu.yaw_deg;
 

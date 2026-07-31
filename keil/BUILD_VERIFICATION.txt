@@ -22,3 +22,14 @@ pure MPU6050 yaw angle (0 -> ROBOT_LINE_FINISH_YAW_DEG, default 350
 deg) instead of the four-sensor all-black stop-line marker. The
 Objects/*.axf/*.hex here and ../firmware/CarMatch_MSPM0G3507*.axf/hex
 were built BEFORE this change -- rebuild (F7) in Keil5 before flashing.
+
+*** SECOND STALE NOTICE: yaw-undercount bug fixed ***
+This build also predates a fix for a real bug: the ~250ms blocking
+OLED flush (bit-banged I2C) caused robot_app_tick()'s control-loop dt
+clamp (>50ms -> 5ms) to also starve the gyro integration, so measured
+yaw ran ~20-35% slower than real rotation -- the car needed about 1.5
+physical laps before software read 350 deg. Fixed by giving the gyro
+integration its own real (unclamped, only capped at
+ROBOT_GYRO_MAX_DT_MS=300ms) dt, separate from the control-loop dt.
+Firmware version string bumped to "V3" (see ROBOT_FIRMWARE_VERSION).
+Rebuild in Keil5 -- do not flash the artifacts built under this record.

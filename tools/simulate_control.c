@@ -65,19 +65,31 @@ static void press_key(hal_pin_t pin)
 }
 
 /**
- * @brief 按给定黑线掩码持续推进若干毫秒。
+ * @brief 按给定黑线掩码持续推进若干毫秒，并周期性模拟 OLED 刷新阻塞。
  *
- * @param duration_ms 推进时长，单位 ms。
+ * 真实硬件上 OLED 每 250 ms 整屏刷新一次，走的是软件位带 I2C，单次刷新
+ * 会阻塞主循环几十毫秒。这里每 250 ms 模拟时间就额外多阻塞 55 ms，
+ * 用来回归验证陀螺仪积分不会因为控制环 dt 限幅而系统性地跑慢
+ * （回归此前"转一圈要转一圈半才停"的 bug）。
+ *
+ * @param duration_ms 推进时长，单位 ms（不含额外插入的阻塞时间）。
  * @param mask 巡线黑线掩码。
  */
 static void tick_for(uint32_t duration_ms, uint8_t mask)
 {
+    static uint32_t s_since_oled_flush_ms;
     uint32_t elapsed;
 
     hal_stub_set_line_mask(mask);
     for (elapsed = 0u; elapsed < duration_ms; elapsed += 5u)
     {
         hal_delay_ms(5u);
+        s_since_oled_flush_ms += 5u;
+        if (s_since_oled_flush_ms >= 250u)
+        {
+            s_since_oled_flush_ms = 0u;
+            hal_delay_ms(55u); /* 模拟一次 OLED 整屏刷新阻塞 */
+        }
         robot_app_tick(hal_millis());
     }
 }

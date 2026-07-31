@@ -27,10 +27,18 @@
  * 哪个版本。每次发布一个值得留痕的版本（调完一批参数、修完一个坑）
  * 就改这一个地方，不用去改 display.c 里的格式字符串。
  */
-#define ROBOT_FIRMWARE_VERSION         "V2"
+#define ROBOT_FIRMWARE_VERSION         "V3"
 
 /* 控制主循环周期。5 ms 对巡线和舵机控制都比较够用。 */
 #define ROBOT_CONTROL_PERIOD_MS        5u
+
+/*
+ * 陀螺仪积分允许使用的最大真实 dt。OLED 整屏刷新（软件位带 I2C）偶尔
+ * 会阻塞主循环几十毫秒，这段时间对应的真实转角不能丢，所以陀螺仪积分
+ * 用真实 dt 而不是控制环限幅后的 dt；这里只挡真正卡死（远超一次 OLED
+ * 刷新耗时）的极端情况，避免单次异常大 dt 积出一个离谱的角度。
+ */
+#define ROBOT_GYRO_MAX_DT_MS           300u
 
 /* 四路红外模块检测到黑线时的电平。多数循迹模块黑线输出低电平。 */
 #define ROBOT_LINE_BLACK_LEVEL         0u
